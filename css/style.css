@@ -159,6 +159,60 @@ button.primary {
   margin: 0 0 8px;
 }
 
+.lobby-roster {
+  margin: 18px auto 0;
+  max-width: 420px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(8, 6, 4, 0.45);
+  text-align: left;
+}
+
+.lobby-roster-count {
+  font-family: var(--font-display);
+  color: var(--gold);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+
+.lobby-roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.lobby-roster-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #e8dcc8;
+  font-size: 0.9rem;
+}
+
+.lobby-roster-item.is-me {
+  border-color: rgba(212, 175, 90, 0.45);
+  background: rgba(212, 175, 90, 0.08);
+}
+
+.lobby-roster-item .tag {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.lobby-roster-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 4px 2px;
+}
+
 /* —— 对局桌面：占满剩余视口，禁止页面滚动 —— */
 .table-wrap {
   display: none;

@@ -33,6 +33,10 @@
   <section class="lobby-shell" id="lobbyPanel">
     <h2>等待开局</h2>
     <p class="meta">四人组队：上下为队友、左右为对手（红蓝分队）。也可先点「模拟对局」单人预览。</p>
+    <div class="lobby-roster" id="lobbyRoster">
+      <div class="lobby-roster-count" id="lobbyRosterCount">房间人数：—</div>
+      <div class="lobby-roster-list" id="lobbyRosterList"></div>
+    </div>
     <div class="lobby-actions">
       <select id="modeSelect">
         <option value="team" selected>组队 2v2（上下队友 · 红蓝）</option>
@@ -1779,6 +1783,47 @@
       closeDbDeclare();
     };
 
+    function updateLobbyRoster() {
+      const countEl = document.getElementById('lobbyRosterCount');
+      const listEl = document.getElementById('lobbyRosterList');
+      if (!countEl || !listEl) return;
+
+      if (offlineSim) {
+        countEl.textContent = '本地模拟中';
+        listEl.innerHTML = '<div class="lobby-roster-empty">模拟对局不占用联机房间</div>';
+        return;
+      }
+
+      if (!client || !client.isJoinedToRoom()) {
+        countEl.textContent = '房间人数：0 / 4';
+        listEl.innerHTML = '<div class="lobby-roster-empty">尚未进入房间…</div>';
+        return;
+      }
+
+      const actors = roomActors().slice().sort((a, b) => a.actorNr - b.actorNr);
+      const max = (client.myRoom() && client.myRoom().maxPlayers) || 4;
+      const n = actors.length || client.myRoom().playerCount || 0;
+      const masterNr = client.myRoomMasterActorNr();
+      countEl.textContent = `房间人数：${n} / ${max}`;
+
+      if (!actors.length) {
+        listEl.innerHTML = '<div class="lobby-roster-empty">等待玩家加入…</div>';
+        return;
+      }
+
+      listEl.innerHTML = actors.map((a) => {
+        const isMe = Number(a.actorNr) === Number(myActorNr);
+        const isMaster = Number(a.actorNr) === Number(masterNr);
+        const tags = [];
+        if (isMe) tags.push('你');
+        if (isMaster) tags.push('房主');
+        return `<div class="lobby-roster-item${isMe ? ' is-me' : ''}">
+          <span>玩家 #${a.actorNr}</span>
+          <span class="tag">${tags.join(' · ') || '已就绪'}</span>
+        </div>`;
+      }).join('');
+    }
+
     function render() {
       const inRoom = !offlineSim && client && client.isJoinedToRoom();
       document.getElementById('roomInfo').textContent = offlineSim
@@ -1805,8 +1850,12 @@
           revealedOnce = false;
           lastRevealKey = '';
         }
+        updateLobbyRoster();
         return;
       }
+
+      // 对局结束回到大厅面板时也刷新人数
+      if (view.phase === 'ended') updateLobbyRoster();
 
       document.getElementById('lobbyPanel').style.display = view.phase === 'ended' ? '' : 'none';
       document.getElementById('gamePanel').classList.add('active');
