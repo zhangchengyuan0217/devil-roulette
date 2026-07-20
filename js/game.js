@@ -214,7 +214,9 @@ function proceedRoundAfterSetup(state) {
     state.awaiting = {
       type: 'double_barrel',
       actorNr: db.actorNr,
-      magSize: state.magazine.length
+      name: db.name,
+      magSize: state.magazine.length,
+      token: `db-${state.round}-${db.actorNr}-${Date.now()}`
     };
     logState(state, `${db.name}（双管）请声明第几发是实弹或空弹。`);
     return;
@@ -610,11 +612,14 @@ function continueAfterItemFx(state) {
 function startItemFx(state, player, itemId, payload, visual) {
   const safePayload = Object.assign({}, payload || {});
   delete safePayload._noSnakeOffer;
+  const meta = ITEMS[itemId] || {};
   state.awaiting = Object.assign(
     {
       type: 'item_fx',
       itemId,
-      itemName: ITEMS[itemId] ? ITEMS[itemId].name : itemId,
+      itemName: meta.name || itemId,
+      itemArt: meta.art || null,
+      itemGlyph: meta.glyph || '✦',
       actorNr: player.actorNr,
       name: player.name,
       token: `fx-${itemId}-${state.round}-${Date.now()}`,
@@ -641,10 +646,16 @@ function applyItemEffect(state, player, itemId, payload) {
     }
     case 'painkiller': {
       const roll = 1 + Math.floor(Math.random() * 6);
+      const meta = ITEMS.painkiller || {};
       state.awaiting = {
         type: 'painkiller_dice',
+        itemId: 'painkiller',
+        itemName: meta.name || '止痛药',
+        itemArt: meta.art || null,
         actorNr: player.actorNr,
         name: player.name,
+        targetActorNr: player.actorNr,
+        targetName: player.name,
         roll,
         token: `pk-${state.round}-${player.actorNr}-${Date.now()}`,
         offerSnake: !payload._noSnakeOffer
@@ -654,13 +665,22 @@ function applyItemEffect(state, player, itemId, payload) {
     }
     case 'bandage':
       heal(state, player, 1);
-      startItemFx(state, player, itemId, payload, { heal: 1, hpAfter: player.hp });
+      startItemFx(state, player, itemId, payload, {
+        heal: 1,
+        hpAfter: player.hp,
+        targetActorNr: player.actorNr,
+        targetName: player.name
+      });
       break;
     case 'eject':
       if (state.magazine.length) {
         const b = state.magazine.pop();
+        const meta = ITEMS.eject || {};
         state.awaiting = {
           type: 'eject_anim',
+          itemId: 'eject',
+          itemName: meta.name || '退弹',
+          itemArt: meta.art || null,
           actorNr: player.actorNr,
           name: player.name,
           bullet: b,
@@ -778,6 +798,26 @@ function declareDoubleBarrel(state, actorNr, index1Based, kind) {
   });
   logState(state, `${success ? '己方' : '对手'} 下轮将额外获得双倍道具（+2）。`);
 
+  state.awaiting = {
+    type: 'double_barrel_reveal',
+    actorNr: player.actorNr,
+    name: player.name,
+    index: index1Based,
+    declared: kind,
+    actual,
+    success,
+    gainerSide: success ? 'ally' : 'foe',
+    gainers: gainers.map((p) => ({ actorNr: p.actorNr, name: p.name })),
+    magSize: state.magazine.length,
+    token: `dbr-${state.round}-${player.actorNr}-${Date.now()}`
+  };
+  return { ok: true };
+}
+
+function continueAfterDoubleBarrelReveal(state) {
+  if (!state.awaiting || state.awaiting.type !== 'double_barrel_reveal') {
+    return { ok: false, reason: '无需确认双管公示' };
+  }
   state.awaiting = null;
   beginTurns(state);
   return { ok: true };
@@ -897,6 +937,8 @@ function handleAction(state, actorNr, action) {
       return useItem(state, actorNr, action.itemIndex, action.payload);
     case 'double_barrel':
       return declareDoubleBarrel(state, actorNr, action.index, action.kind);
+    case 'double_barrel_done':
+      return continueAfterDoubleBarrelReveal(state);
     case 'ammo_draw_done':
       return continueAfterAmmoDraw(state);
     case 'first_player_done':

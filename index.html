@@ -87,12 +87,6 @@
       </span>
       <span id="awaitBar" style="display:none;align-items:center;gap:8px">
         <span class="meta" id="awaitHint"></span>
-        <input id="dbIndex" type="number" min="1" value="1" style="width:56px">
-        <select id="dbKind">
-          <option value="live">实弹</option>
-          <option value="blank">空弹</option>
-        </select>
-        <button id="dbBtn" class="primary" type="button">声明</button>
       </span>
     </div>
   </section>
@@ -140,6 +134,7 @@
   <div class="dice-overlay" id="diceOverlay">
     <div class="dice-title">止痛药</div>
     <div class="dice-sub" id="diceSub">投掷六面骰…</div>
+    <div class="dice-cast" id="diceCast"></div>
     <div class="dice-cube" id="diceCube">
       <span class="dice-face" id="diceFace">?</span>
     </div>
@@ -149,6 +144,7 @@
   <div class="eject-overlay" id="ejectOverlay">
     <div class="eject-title">退弹</div>
     <div class="eject-sub" id="ejectSub">弃置弹药堆顶…</div>
+    <div class="eject-cast" id="ejectCast"></div>
     <div class="eject-shell unknown" id="ejectShell">
       <span class="eject-shell-mark" id="ejectShellMark">?</span>
       <span class="eject-shell-label" id="ejectShellLabel">未知</span>
@@ -159,8 +155,61 @@
   <div class="item-fx-overlay" id="itemFxOverlay">
     <div class="item-fx-title" id="itemFxTitle">道具效果</div>
     <div class="item-fx-sub" id="itemFxSub"></div>
+    <div class="item-fx-cast" id="itemFxCast"></div>
     <div class="item-fx-stage" id="itemFxStage"></div>
     <div class="item-fx-result" id="itemFxResult"></div>
+  </div>
+
+  <div class="ammo-pick-overlay" id="swapPickOverlay">
+    <div class="ammo-pick-panel">
+      <div class="ammo-pick-title">换弹</div>
+      <div class="ammo-pick-sub" id="swapPickSub">点选两发弹药进行交换（第 1 发为下一发）</div>
+      <div class="ammo-pick-row" id="swapPickRow"></div>
+      <div class="ammo-pick-hint" id="swapPickHint">已选 0 / 2</div>
+      <div class="ammo-pick-actions">
+        <button type="button" id="swapPickCancel">取消</button>
+        <button type="button" class="primary" id="swapPickConfirm" disabled>交换</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="player-pick-overlay" id="playerPickOverlay">
+    <div class="player-pick-panel">
+      <div class="player-pick-title" id="playerPickTitle">选择目标</div>
+      <div class="player-pick-sub" id="playerPickSub">点选一名玩家</div>
+      <div class="player-pick-grid" id="playerPickGrid"></div>
+      <div class="player-pick-hint" id="playerPickHint">已选 0</div>
+      <div class="player-pick-actions" id="playerPickActions">
+        <button type="button" id="playerPickCancel">取消</button>
+        <button type="button" id="playerPickExtra" style="display:none"></button>
+        <button type="button" class="primary" id="playerPickConfirm" disabled>确认</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="db-overlay" id="dbDeclareOverlay">
+    <div class="db-panel">
+      <div class="db-title">双管 · 声明</div>
+      <div class="db-sub" id="dbDeclareSub">选择第几发，并声明为实弹或空弹</div>
+      <div class="ammo-pick-row" id="dbDeclareRow"></div>
+      <div class="db-kind-row" id="dbKindRow">
+        <button type="button" class="db-kind-btn" data-kind="live">实弹</button>
+        <button type="button" class="db-kind-btn" data-kind="blank">空弹</button>
+      </div>
+      <div class="ammo-pick-hint" id="dbDeclareHint">请选择发数与类型</div>
+      <div class="ammo-pick-actions" id="dbDeclareActions">
+        <button type="button" class="primary" id="dbDeclareConfirm" disabled>确认声明</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="db-overlay" id="dbRevealOverlay">
+    <div class="db-panel">
+      <div class="db-title" id="dbRevealTitle">双管声明</div>
+      <div class="db-sub" id="dbRevealSub"></div>
+      <div class="db-reveal-stage" id="dbRevealStage"></div>
+      <div class="db-reveal-result" id="dbRevealResult"></div>
+    </div>
   </div>
 
   <!-- 固定层提示：不占文档流，避免悬停重排 -->
@@ -211,6 +260,14 @@
     let snakeTimer = null;
     let snakeTimerToken = '';
     let snakeCountdownTimer = null;
+    let swapPickPending = null; // { itemIndex }
+    let swapPickSelected = [];
+    let playerPickState = null; // { min, max, selected, onConfirm, onExtra, ... }
+    let dbDeclareIndex = null;
+    let dbDeclareKind = null;
+    let lastDbDeclareToken = '';
+    let lastDbRevealToken = '';
+    let dbRevealTimer = null;
 
     function getStableUserId() {
       const key = 'devil_roulette_uid';
@@ -312,12 +369,22 @@
       if (gameState.awaiting && gameState.awaiting.type === 'painkiller_dice') return;
       if (gameState.awaiting && gameState.awaiting.type === 'eject_anim') return;
       if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'double_barrel_reveal') return;
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
         if (gameState.awaiting.actorNr === myActorNr) return; // 本人手动抉择
         botTimer = setTimeout(() => {
           botTimer = null;
           runBotTurn();
         }, 700);
+        return;
+      }
+      // 双管声明：机器人自动选
+      if (gameState.awaiting && gameState.awaiting.type === 'double_barrel') {
+        if (gameState.awaiting.actorNr === myActorNr) return;
+        botTimer = setTimeout(() => {
+          botTimer = null;
+          runBotTurn();
+        }, 800);
         return;
       }
       const cur = gameState.turnOrder[gameState.currentTurn];
@@ -337,6 +404,7 @@
       if (gameState.awaiting && gameState.awaiting.type === 'painkiller_dice') return;
       if (gameState.awaiting && gameState.awaiting.type === 'eject_anim') return;
       if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'double_barrel_reveal') return;
 
       // 响尾蛇窗口（机器人）
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
@@ -351,9 +419,10 @@
         return;
       }
 
-      // 双管声明
+      // 双管声明（机器人）
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel') {
         const a = gameState.awaiting;
+        if (a.actorNr === myActorNr) return;
         handleAction(gameState, a.actorNr, {
           type: 'double_barrel',
           index: 1 + Math.floor(Math.random() * a.magSize),
@@ -600,6 +669,8 @@
       maybeShowEjectAnim();
       maybeShowItemFx();
       maybeShowFirstSpin();
+      maybeShowDbDeclare();
+      maybeShowDbReveal();
     }
 
     function joinPreferredRoom(preferRejoin) {
@@ -724,6 +795,8 @@
       maybeShowEjectAnim();
       maybeShowItemFx();
       maybeShowFirstSpin();
+      maybeShowDbDeclare();
+      maybeShowDbReveal();
     };
 
     function finishAmmoDraw() {
@@ -841,10 +914,7 @@
       const overlay = document.getElementById('diceOverlay');
       const awaiting = view && view.awaiting;
       if (!awaiting || awaiting.type !== 'painkiller_dice') {
-        if (diceAnimTimer) {
-          clearInterval(diceAnimTimer);
-          diceAnimTimer = null;
-        }
+        if (diceAnimTimer) return;
         overlay.classList.remove('show', 'landed', 'odd', 'even');
         return;
       }
@@ -864,6 +934,7 @@
       const face = document.getElementById('diceFace');
       const resultEl = document.getElementById('diceResult');
       const subEl = document.getElementById('diceSub');
+      const castEl = document.getElementById('diceCast');
 
       if (diceAnimTimer) {
         clearInterval(diceAnimTimer);
@@ -872,12 +943,25 @@
 
       const target = awaiting.roll || 1;
       const odd = target % 2 === 1;
+      const who = awaiting.name || `玩家#${awaiting.actorNr}`;
+      const mine = Number(awaiting.actorNr) === Number(myActorNr);
+      const meta = itemMeta('painkiller');
+      const art = awaiting.itemArt || meta.art;
+      castEl.innerHTML = `
+        <div class="fx-announce">
+          ${fxCardHtml(art, awaiting.itemName || meta.name, meta.glyph)}
+          <div class="fx-cast-arrow">➜</div>
+          ${fxTargetChip(awaiting.targetName || who, awaiting.targetActorNr || awaiting.actorNr)}
+        </div>
+      `;
       overlay.classList.add('show');
       overlay.classList.remove('landed', 'odd', 'even');
       cube.classList.add('rolling');
       cube.classList.remove('land');
       resultEl.textContent = '';
-      subEl.textContent = `${awaiting.name || '玩家'} 投掷六面骰…`;
+      subEl.textContent = mine
+        ? `你使用了【止痛药】，投掷六面骰…`
+        : `${who} 使用了【止痛药】，投掷六面骰…`;
       face.textContent = '?';
 
       let tick = 0;
@@ -893,12 +977,13 @@
           cube.classList.add('land');
           overlay.classList.add('landed', odd ? 'odd' : 'even');
           resultEl.textContent = odd
-            ? `掷出 ${target}（奇数）→ 失去 1 点血量`
-            : `掷出 ${target}（偶数）→ 回复 2 点血量`;
-          subEl.textContent = '骰子结果';
+            ? `掷出 ${target}（奇数）→ ${who} 失去 1 点血量`
+            : `掷出 ${target}（偶数）→ ${who} 回复 2 点血量`;
+          subEl.textContent = `效果发送：${who}`;
           setTimeout(() => {
             overlay.classList.remove('show', 'landed', 'odd', 'even');
             cube.classList.remove('land');
+            castEl.innerHTML = '';
             finishPainkillerDice();
           }, 1200);
         }
@@ -914,10 +999,7 @@
       const overlay = document.getElementById('ejectOverlay');
       const awaiting = view && view.awaiting;
       if (!awaiting || awaiting.type !== 'eject_anim') {
-        if (ejectAnimTimer) {
-          clearTimeout(ejectAnimTimer);
-          ejectAnimTimer = null;
-        }
+        if (ejectAnimTimer) return;
         overlay.classList.remove('show', 'landed', 'is-live', 'is-blank', 'is-special');
         return;
       }
@@ -939,6 +1021,7 @@
       const label = document.getElementById('ejectShellLabel');
       const resultEl = document.getElementById('ejectResult');
       const subEl = document.getElementById('ejectSub');
+      const castEl = document.getElementById('ejectCast');
 
       if (ejectAnimTimer) {
         clearTimeout(ejectAnimTimer);
@@ -948,6 +1031,15 @@
       const bullet = awaiting.bullet;
       const kindClass = bullet === 'live' ? 'is-live' : bullet === 'blank' ? 'is-blank' : 'is-special';
       const name = bulletLabel(bullet);
+      const who = awaiting.name || `玩家#${awaiting.actorNr}`;
+      const mine = Number(awaiting.actorNr) === Number(myActorNr);
+      const meta = itemMeta('eject');
+      const art = awaiting.itemArt || meta.art;
+      castEl.innerHTML = `
+        <div class="fx-announce">
+          ${fxCardHtml(art, awaiting.itemName || meta.name, meta.glyph)}
+        </div>
+      `;
 
       overlay.classList.add('show');
       overlay.classList.remove('landed', 'is-live', 'is-blank', 'is-special');
@@ -955,7 +1047,9 @@
       mark.textContent = '?';
       label.textContent = '背面';
       resultEl.textContent = '';
-      subEl.textContent = `${awaiting.name || '玩家'} 弃置弹药堆顶…`;
+      subEl.textContent = mine
+        ? `你使用了【退弹】，弃置弹药堆顶…`
+        : `${who} 使用了【退弹】，弃置弹药堆顶…`;
 
       // 翻面揭示
       ejectAnimTimer = setTimeout(() => {
@@ -964,11 +1058,12 @@
         overlay.classList.add('landed', kindClass);
         mark.textContent = bullet === 'live' ? '实' : bullet === 'blank' ? '空' : '特';
         label.textContent = name;
-        resultEl.textContent = `弃置【${name}】 · 转轮剩余 ${awaiting.remaining} 发`;
-        subEl.textContent = '退弹完成';
+        resultEl.textContent = `${who} 弃置【${name}】 · 转轮剩余 ${awaiting.remaining} 发`;
+        subEl.textContent = '退弹完成（全员可见）';
         ejectAnimTimer = setTimeout(() => {
           overlay.classList.remove('show', 'landed', 'is-live', 'is-blank', 'is-special');
           shell.className = 'eject-shell unknown';
+          castEl.innerHTML = '';
           ejectAnimTimer = null;
           finishEjectAnim();
         }, 1100);
@@ -980,15 +1075,52 @@
       sendAction({ type: 'item_fx_done' });
     }
 
+    function fxCardHtml(art, name, glyph) {
+      if (art) {
+        return `<div class="fx-used-card"><img src="${art}" alt="${name || ''}"><span class="fx-used-name">${name || ''}</span></div>`;
+      }
+      return `<div class="fx-used-card fallback"><span class="fx-used-glyph">${glyph || '✦'}</span><span class="fx-used-name">${name || '道具'}</span></div>`;
+    }
+
+    function fxTargetChip(name, actorNr) {
+      const label = name || (actorNr != null ? `#${actorNr}` : '目标');
+      return `<div class="fx-target-chip"><span class="fx-target-label">目标</span><strong>${label}</strong></div>`;
+    }
+
+    function fxPublicTargets(awaiting) {
+      const list = [];
+      if (!awaiting) return list;
+      if (awaiting.targetActorNr != null) {
+        list.push({
+          actorNr: Number(awaiting.targetActorNr),
+          name: awaiting.targetName || `#${awaiting.targetActorNr}`
+        });
+      }
+      if (Array.isArray(awaiting.linkActors) && awaiting.linkActors.length) {
+        awaiting.linkActors.forEach((nr, i) => {
+          const name = (awaiting.linkNames && awaiting.linkNames[i]) || `#${nr}`;
+          if (!list.some((t) => t.actorNr === Number(nr))) {
+            list.push({ actorNr: Number(nr), name });
+          }
+        });
+      }
+      return list;
+    }
+
+    function awaitingFxActors(awaiting) {
+      if (!awaiting) return { caster: null, targets: [] };
+      const caster = awaiting.actorNr != null ? Number(awaiting.actorNr) : null;
+      const targets = fxPublicTargets(awaiting).map((t) => t.actorNr);
+      return { caster, targets };
+    }
+
     function maybeShowItemFx() {
       const overlay = document.getElementById('itemFxOverlay');
       const awaiting = view && view.awaiting;
       if (!awaiting || awaiting.type !== 'item_fx') {
-        if (itemFxTimer) {
-          clearTimeout(itemFxTimer);
-          itemFxTimer = null;
-        }
-        overlay.classList.remove('show', 'landed');
+        // 动画播完再清，避免房主先结算导致其他人看不到完整公示
+        if (itemFxTimer) return;
+        overlay.classList.remove('show', 'landed', 'play');
         return;
       }
       if (document.getElementById('revealOverlay').classList.contains('show')) return;
@@ -1007,6 +1139,7 @@
       const overlay = document.getElementById('itemFxOverlay');
       const title = document.getElementById('itemFxTitle');
       const sub = document.getElementById('itemFxSub');
+      const cast = document.getElementById('itemFxCast');
       const stage = document.getElementById('itemFxStage');
       const result = document.getElementById('itemFxResult');
       if (itemFxTimer) {
@@ -1015,13 +1148,26 @@
       }
 
       const itemName = awaiting.itemName || '道具';
-      const who = awaiting.name || '玩家';
+      const who = awaiting.name || `玩家#${awaiting.actorNr}`;
       const mine = Number(awaiting.actorNr) === Number(myActorNr);
-      title.textContent = itemName;
-      sub.textContent = `${who} 发动效果…`;
+      const targets = fxPublicTargets(awaiting);
+      const meta = itemMeta(awaiting.itemId);
+      const art = awaiting.itemArt || meta.art;
+      const glyph = awaiting.itemGlyph || meta.glyph;
+
+      title.textContent = `【${itemName}】`;
+      sub.textContent = mine
+        ? `你使用了【${itemName}】`
+        : `${who} 使用了【${itemName}】`;
       result.textContent = '';
+      cast.innerHTML = `
+        <div class="fx-announce">
+          ${fxCardHtml(art, itemName, glyph)}
+          ${targets.length ? `<div class="fx-cast-arrow">➜</div><div class="fx-target-row">${targets.map((t) => fxTargetChip(t.name, t.actorNr)).join('')}</div>` : ''}
+        </div>
+      `;
       overlay.classList.add('show');
-      overlay.classList.remove('landed');
+      overlay.classList.remove('landed', 'play');
 
       let stageHtml = '';
       let resultText = '';
@@ -1030,7 +1176,7 @@
       if (id === 'lucky_coin') {
         if (awaiting.hidden || !mine) {
           stageHtml = `<div class="fx-icon fx-draw">＋2</div>`;
-          resultText = `${who} 抽取了 2 张道具`;
+          resultText = `${who} 抽取了 2 张道具（仅本人可见抽到的牌）`;
         } else {
           const cards = (awaiting.drawn || []).map((cid) => {
             const it = itemMeta(cid);
@@ -1043,14 +1189,14 @@
         }
       } else if (id === 'bandage') {
         stageHtml = `<div class="fx-icon fx-heal">♥</div>`;
-        resultText = `${who} 回复 1 点血量`;
+        resultText = `${awaiting.targetName || who} 回复 1 点血量`;
       } else if (id === 'inspect' || id === 'peek_top') {
         const pos = (awaiting.peekIndex || 0) + 1;
         if (awaiting.hidden || !mine) {
           stageHtml = `<div class="fx-shell unknown"><span>?</span></div>`;
           resultText = id === 'peek_top'
-            ? `${who} 查看了弹药堆顶（仅本人可见）`
-            : `${who} 检视了第 ${pos} 发（仅本人可见）`;
+            ? `${who} 查看了弹药堆顶（内容仅本人可见）`
+            : `${who} 检视了第 ${pos} 发（内容仅本人可见）`;
         } else {
           const b = awaiting.bullet;
           const cls = b === 'live' ? 'live' : b === 'blank' ? 'blank' : 'special';
@@ -1062,23 +1208,23 @@
         }
       } else if (id === 'shotgun') {
         stageHtml = `<div class="fx-icon fx-shotgun">霰</div>`;
-        resultText = '下一发实弹伤害 ×2';
+        resultText = '下一发实弹伤害 ×2（全员可见）';
       } else if (id === 'swap') {
         stageHtml = `<div class="fx-swap"><span class="fx-shell unknown"><span>${awaiting.swapFrom || '?'}</span></span><span class="fx-swap-arrow">⇄</span><span class="fx-shell unknown"><span>${awaiting.swapTo || '?'}</span></span></div>`;
-        resultText = `交换第 ${awaiting.swapFrom} 发 ↔ 第 ${awaiting.swapTo} 发`;
+        resultText = `${who} 交换第 ${awaiting.swapFrom} 发 ↔ 第 ${awaiting.swapTo} 发`;
       } else if (id === 'reverse') {
         stageHtml = `<div class="fx-icon fx-reverse">实 ⇄ 空</div>`;
-        resultText = '下一发实弹与空弹互换';
+        resultText = '下一发实弹与空弹互换（全员可见）';
       } else if (id === 'bind') {
         stageHtml = `<div class="fx-icon fx-bind">捆</div>`;
-        resultText = `${awaiting.targetName || '目标'} 下一回合无法行动`;
+        resultText = `${who} → ${awaiting.targetName || '目标'}：下一回合无法行动`;
       } else if (id === 'double_arrow') {
         if (awaiting.unlock) {
           stageHtml = `<div class="fx-icon fx-unlink">解</div>`;
-          resultText = '连锁已解除';
+          resultText = `${who} 解除了连锁`;
         } else {
           stageHtml = `<div class="fx-icon fx-link">雕</div>`;
-          resultText = `连锁：${(awaiting.linkNames || []).join('、') || '无'}`;
+          resultText = `${who} 连锁 → ${(awaiting.linkNames || []).join('、') || '无'}`;
         }
       } else {
         stageHtml = `<div class="fx-icon">✦</div>`;
@@ -1086,20 +1232,22 @@
       }
 
       stage.innerHTML = stageHtml;
-      // 入场动画帧
       requestAnimationFrame(() => overlay.classList.add('play'));
 
       itemFxTimer = setTimeout(() => {
         overlay.classList.add('landed');
         result.textContent = resultText;
-        sub.textContent = '效果结算';
+        sub.textContent = targets.length
+          ? `效果发送：${targets.map((t) => t.name).join('、')}`
+          : '效果结算';
         itemFxTimer = setTimeout(() => {
           overlay.classList.remove('show', 'landed', 'play');
           stage.innerHTML = '';
+          cast.innerHTML = '';
           itemFxTimer = null;
           finishItemFx();
-        }, 1100);
-      }, 1200);
+        }, 1400);
+      }, 1300);
     }
 
     function finishFirstPlayerSpin() {
@@ -1194,6 +1342,195 @@
       }, 90);
     }
 
+    function refreshDbDeclareHint() {
+      const hint = document.getElementById('dbDeclareHint');
+      const conf = document.getElementById('dbDeclareConfirm');
+      const kindLabel = dbDeclareKind === 'live' ? '实弹' : dbDeclareKind === 'blank' ? '空弹' : null;
+      if (dbDeclareIndex == null && !dbDeclareKind) {
+        hint.textContent = '请选择发数，并声明实弹或空弹';
+      } else if (dbDeclareIndex == null) {
+        hint.textContent = `已选【${kindLabel}】· 再点一发弹药`;
+      } else if (!dbDeclareKind) {
+        hint.textContent = `已选第 ${dbDeclareIndex} 发 · 再选实弹或空弹`;
+      } else {
+        hint.textContent = `声明：第 ${dbDeclareIndex} 发是【${kindLabel}】`;
+      }
+      conf.disabled = !(dbDeclareIndex != null && dbDeclareKind);
+      document.querySelectorAll('#dbDeclareRow .ammo-pick-shell').forEach((btn) => {
+        btn.classList.toggle('picked', Number(btn.dataset.index) + 1 === dbDeclareIndex);
+      });
+      document.querySelectorAll('#dbKindRow .db-kind-btn').forEach((btn) => {
+        btn.classList.toggle('picked', btn.dataset.kind === dbDeclareKind);
+      });
+    }
+
+    function closeDbDeclare() {
+      document.getElementById('dbDeclareOverlay').classList.remove('show');
+      document.getElementById('dbDeclareRow').innerHTML = '';
+      dbDeclareIndex = null;
+      dbDeclareKind = null;
+    }
+
+    function openDbDeclare(awaiting) {
+      const mine = Number(awaiting.actorNr) === Number(myActorNr);
+      const overlay = document.getElementById('dbDeclareOverlay');
+      const sub = document.getElementById('dbDeclareSub');
+      const row = document.getElementById('dbDeclareRow');
+      const actions = document.getElementById('dbDeclareActions');
+      const kindRow = document.getElementById('dbKindRow');
+      const count = awaiting.magSize || 0;
+
+      if (!mine) {
+        sub.textContent = `${awaiting.name || '#' + awaiting.actorNr}（双管）正在选择声明…全员等待中`;
+        row.innerHTML = Array.from({ length: count }, (_, i) => `
+          <div class="ammo-pick-shell" style="cursor:default">
+            <span class="shell unknown"></span>
+            <span class="ammo-pick-ord">第 ${i + 1} 发</span>
+          </div>
+        `).join('');
+        kindRow.style.display = 'none';
+        actions.style.display = 'none';
+        document.getElementById('dbDeclareHint').textContent = '声明结果将向全员公示';
+        overlay.classList.add('show');
+        return;
+      }
+
+      kindRow.style.display = '';
+      actions.style.display = '';
+      dbDeclareIndex = null;
+      dbDeclareKind = null;
+      sub.textContent = `当前转轮 ${count} 发 · 点选一发并声明实弹/空弹（成功则己方下轮双倍道具）`;
+      row.innerHTML = Array.from({ length: count }, (_, i) => `
+        <button type="button" class="ammo-pick-shell" data-index="${i}" aria-label="第 ${i + 1} 发">
+          <span class="shell unknown"></span>
+          <span class="ammo-pick-ord">第 ${i + 1} 发</span>
+        </button>
+      `).join('');
+      row.querySelectorAll('.ammo-pick-shell').forEach((btn) => {
+        btn.onclick = () => {
+          dbDeclareIndex = Number(btn.dataset.index) + 1;
+          refreshDbDeclareHint();
+        };
+      });
+      document.querySelectorAll('#dbKindRow .db-kind-btn').forEach((btn) => {
+        btn.onclick = () => {
+          dbDeclareKind = btn.dataset.kind;
+          refreshDbDeclareHint();
+        };
+      });
+      refreshDbDeclareHint();
+      overlay.classList.add('show');
+    }
+
+    function maybeShowDbDeclare() {
+      const overlay = document.getElementById('dbDeclareOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'double_barrel') {
+        closeDbDeclare();
+        return;
+      }
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (document.getElementById('dbRevealOverlay').classList.contains('show')) return;
+      const token = awaiting.token || `db-${awaiting.actorNr}-${awaiting.magSize}`;
+      if (token === lastDbDeclareToken && overlay.classList.contains('show')) return;
+      lastDbDeclareToken = token;
+      openDbDeclare(awaiting);
+    }
+
+    function finishDbReveal() {
+      if (!isHost()) return;
+      sendAction({ type: 'double_barrel_done' });
+    }
+
+    function maybeShowDbReveal() {
+      const overlay = document.getElementById('dbRevealOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'double_barrel_reveal') {
+        if (dbRevealTimer) return;
+        overlay.classList.remove('show', 'landed', 'success', 'fail');
+        return;
+      }
+      closeDbDeclare();
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (awaiting.token && awaiting.token === lastDbRevealToken) {
+        if (!overlay.classList.contains('show')) overlay.classList.add('show');
+        return;
+      }
+      lastDbRevealToken = awaiting.token || `dbr-${awaiting.actorNr}-${awaiting.index}`;
+      playDbReveal(awaiting);
+    }
+
+    function playDbReveal(awaiting) {
+      const overlay = document.getElementById('dbRevealOverlay');
+      const title = document.getElementById('dbRevealTitle');
+      const sub = document.getElementById('dbRevealSub');
+      const stage = document.getElementById('dbRevealStage');
+      const result = document.getElementById('dbRevealResult');
+      if (dbRevealTimer) {
+        clearTimeout(dbRevealTimer);
+        dbRevealTimer = null;
+      }
+
+      const who = awaiting.name || `#${awaiting.actorNr}`;
+      const declaredLabel = bulletLabel(awaiting.declared);
+      const actualLabel = bulletLabel(awaiting.actual);
+      const idx = awaiting.index;
+      const mag = awaiting.magSize || idx;
+      const actualCls = awaiting.actual === 'live' ? 'live' : awaiting.actual === 'blank' ? 'blank' : 'special';
+
+      title.textContent = '双管 · 声明公示';
+      sub.textContent = `${who} 声明第 ${idx} 发是【${declaredLabel}】`;
+      result.textContent = '';
+      overlay.classList.remove('landed', 'success', 'fail');
+      overlay.classList.add('show');
+
+      const shells = Array.from({ length: mag }, (_, i) => {
+        const n = i + 1;
+        const focus = n === idx;
+        const shellCls = focus ? actualCls : 'unknown';
+        const mark = focus
+          ? (awaiting.actual === 'live' ? '实' : awaiting.actual === 'blank' ? '空' : '特')
+          : '';
+        return `<div class="db-reveal-shell${focus ? ' focus' : ''}">
+          <span class="shell ${shellCls}">${mark}</span>
+          <span class="ammo-pick-ord">第 ${n} 发</span>
+        </div>`;
+      }).join('');
+
+      stage.innerHTML = `
+        <div class="db-reveal-shells">${shells}</div>
+        <div class="db-reveal-call">声明【${declaredLabel}】 → 翻开…</div>
+      `;
+
+      dbRevealTimer = setTimeout(() => {
+        const gainers = (awaiting.gainers || []).map((g) => g.name || `#${g.actorNr}`).join('、') || '无人';
+        const sideText = awaiting.success
+          ? `声明成功！${gainers} 下轮获得双倍道具`
+          : `声明失败！${gainers} 下轮获得双倍道具`;
+        result.textContent = `实际为【${actualLabel}】· ${sideText}`;
+        overlay.classList.add('landed', awaiting.success ? 'success' : 'fail');
+        const call = stage.querySelector('.db-reveal-call');
+        if (call) call.textContent = `第 ${idx} 发实际是【${actualLabel}】`;
+        dbRevealTimer = setTimeout(() => {
+          overlay.classList.remove('show', 'landed', 'success', 'fail');
+          stage.innerHTML = '';
+          dbRevealTimer = null;
+          finishDbReveal();
+        }, 1800);
+      }, 1400);
+    }
+
+    document.getElementById('dbDeclareConfirm').onclick = () => {
+      if (dbDeclareIndex == null || !dbDeclareKind) return;
+      sendAction({
+        type: 'double_barrel',
+        index: dbDeclareIndex,
+        kind: dbDeclareKind
+      });
+      closeDbDeclare();
+    };
+
     function render() {
       const inRoom = !offlineSim && client && client.isJoinedToRoom();
       document.getElementById('roomInfo').textContent = offlineSim
@@ -1270,17 +1607,22 @@
 
       const me = view.players.find((p) => p.actorNr === myActorNr);
       const myTurn = view.phase === 'playing' && !view.awaiting && curNr === Number(myActorNr);
+      const fxActors = awaitingFxActors(view.awaiting);
 
       function seatHtml(p, shotSide) {
         const isMe = Number(p.actorNr) === Number(myActorNr);
         const ally = me && !isMe && view.mode === 'team' && p.team === me.team;
+        const isCaster = fxActors.caster != null && Number(p.actorNr) === fxActors.caster;
+        const isFxTarget = fxActors.targets.some((nr) => Number(nr) === Number(p.actorNr));
         const cls = [
           'hero-seat',
           isMe ? 'me' : '',
           ally ? 'ally' : '',
           p.actorNr === curNr ? 'turn' : '',
           !p.alive ? 'dead' : '',
-          !isMe && selectedTarget === p.actorNr ? 'selected' : ''
+          !isMe && selectedTarget === p.actorNr ? 'selected' : '',
+          isCaster ? 'fx-caster' : '',
+          isFxTarget ? 'fx-hit' : ''
         ].join(' ');
         const name = isMe ? `你 · #${p.actorNr}` : `${p.name} #${p.actorNr}`;
         const canShoot = myTurn && p.alive;
@@ -1444,11 +1786,12 @@
       }
 
       const awaitBar = document.getElementById('awaitBar');
-      if (view.awaiting && view.awaiting.type === 'double_barrel' && myAwait) {
-        awaitBar.style.display = 'inline-flex';
-        document.getElementById('awaitHint').textContent = `双管声明 1~${view.awaiting.magSize}`;
-        document.getElementById('dbBtn').disabled = false;
-        document.getElementById('dbIndex').max = view.awaiting.magSize;
+      if (view.awaiting && view.awaiting.type === 'double_barrel') {
+        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
+        awaitBar.style.display = mine ? 'none' : 'inline-flex';
+        document.getElementById('awaitHint').textContent = mine
+          ? ''
+          : `${view.awaiting.name || '#' + view.awaiting.actorNr}（双管）正在声明…`;
       } else {
         awaitBar.style.display = 'none';
       }
@@ -1644,50 +1987,313 @@
 
       const me = view.players.find((p) => Number(p.actorNr) === Number(myActorNr));
       const toSelf = Number(targetActorNr) === Number(myActorNr);
-      let nightOwlTargetNr;
-      let confirmMsg = toSelf
-        ? `确认对自己（${playerLabel(myActorNr)}）开枪？`
-        : `确认对 ${playerLabel(targetActorNr)} 开枪？`;
+
+      const finishShoot = (nightOwlTargetNr) => {
+        let confirmMsg = toSelf
+          ? `确认对自己（${playerLabel(myActorNr)}）开枪？`
+          : `确认对 ${playerLabel(targetActorNr)} 开枪？`;
+        if (nightOwlTargetNr != null) {
+          confirmMsg = `确认对自己开枪？\n（夜枭效果：若打出实弹，你与 ${playerLabel(nightOwlTargetNr)} 将一起扣血）`;
+        }
+        if (!confirm(confirmMsg)) return;
+        sendAction({
+          type: 'shoot',
+          targetActorNr: Number(targetActorNr),
+          nightOwlTargetNr
+        });
+        selectedHand = [];
+      };
 
       if (toSelf && me && me.role === 'night_owl' && me.hp <= 4) {
         const foes = view.players.filter((p) => p.alive && Number(p.actorNr) !== Number(myActorNr));
-        let link = selectedTarget && foes.some((f) => Number(f.actorNr) === Number(selectedTarget))
-          ? selectedTarget
-          : (foes.length === 1 ? foes[0].actorNr : null);
-        if (!link) {
-          alert('夜枭血量≤4：请先点选一名对手卡牌，实弹将与你一起扣血。');
+        if (!foes.length) {
+          finishShoot(undefined);
           return;
         }
-        nightOwlTargetNr = link;
-        confirmMsg = `确认对自己开枪？\n（夜枭效果：若打出实弹，你与 ${playerLabel(link)} 将一起扣血）`;
+        if (foes.length === 1) {
+          finishShoot(foes[0].actorNr);
+          return;
+        }
+        openPlayerPicker({
+          title: '夜枭 · 选择连带目标',
+          sub: '对自己开枪若打出实弹，将与所选对手一起扣血',
+          players: view.players,
+          selectable: (p) => p.alive && Number(p.actorNr) !== Number(myActorNr),
+          min: 1,
+          max: 1,
+          confirmLabel: '确认目标',
+          onConfirm: (nrs) => finishShoot(nrs[0])
+        });
+        return;
       }
 
-      if (!confirm(confirmMsg)) return;
-      sendAction({ type: 'shoot', targetActorNr: Number(targetActorNr), nightOwlTargetNr });
-      selectedHand = [];
+      finishShoot(undefined);
     }
 
     document.getElementById('useItemBtn').onclick = () => {
       if (selectedHand.length !== 1) return;
       const itemIndex = selectedHand[0];
       const itemId = view.me.hand[itemIndex];
-      const payload = {};
+
       if (itemId === 'bind') {
-        if (!selectedTarget) return alert('请先点击一名对手作为捆绑目标');
-        payload.targetActorNr = selectedTarget;
-      } else if (itemId === 'inspect') {
+        openPlayerPicker({
+          title: '捆绑',
+          sub: '选择一名玩家，其下一回合无法行动',
+          players: view.players,
+          selectable: (p) => p.alive && Number(p.actorNr) !== Number(myActorNr),
+          min: 1,
+          max: 1,
+          confirmLabel: '捆绑',
+          onConfirm: (nrs) => {
+            sendAction({ type: 'use_item', itemIndex, payload: { targetActorNr: nrs[0] } });
+            selectedHand = [];
+          }
+        });
+        return;
+      }
+
+      if (itemId === 'swap') {
+        openSwapPicker(itemIndex);
+        return;
+      }
+
+      if (itemId === 'double_arrow') {
+        openPlayerPicker({
+          title: '一箭双雕',
+          sub: '选择 1~2 名玩家建立连锁；也可直接解除当前连锁',
+          players: view.players,
+          selectable: (p) => p.alive,
+          min: 1,
+          max: 2,
+          confirmLabel: '建立连锁',
+          extraLabel: '解除连锁',
+          onConfirm: (nrs) => {
+            sendAction({ type: 'use_item', itemIndex, payload: { targets: nrs } });
+            selectedHand = [];
+          },
+          onExtra: () => {
+            sendAction({ type: 'use_item', itemIndex, payload: { unlock: true } });
+            selectedHand = [];
+          }
+        });
+        return;
+      }
+
+      const payload = {};
+      if (itemId === 'inspect') {
         payload.index = Math.max(0, Number(prompt('查看从上数第几发？', '1')) - 1);
-      } else if (itemId === 'swap') {
-        payload.i = Number(prompt('交换：第几发', '1')) - 1;
-        payload.j = Number(prompt('与第几发', '2')) - 1;
-      } else if (itemId === 'double_arrow') {
-        if (!confirm('确定=设置连锁（用当前选中目标）；取消=解除连锁')) {
-          payload.unlock = true;
-        } else {
-          payload.targets = selectedTarget ? [selectedTarget] : [];
-        }
       }
       sendAction({ type: 'use_item', itemIndex, payload });
+      selectedHand = [];
+    };
+
+    function closePlayerPicker() {
+      playerPickState = null;
+      document.getElementById('playerPickOverlay').classList.remove('show');
+      document.getElementById('playerPickGrid').innerHTML = '';
+      document.getElementById('playerPickConfirm').disabled = true;
+      document.getElementById('playerPickExtra').style.display = 'none';
+      document.getElementById('playerPickHint').textContent = '已选 0';
+    }
+
+    function refreshPlayerPickHint() {
+      if (!playerPickState) return;
+      const { selected, min, max } = playerPickState;
+      const hint = document.getElementById('playerPickHint');
+      const conf = document.getElementById('playerPickConfirm');
+      const names = selected.map((nr) => {
+        const p = view && view.players.find((x) => Number(x.actorNr) === Number(nr));
+        return p ? (Number(p.actorNr) === Number(myActorNr) ? `你·#${p.actorNr}` : `${p.name}·#${p.actorNr}`) : `#${nr}`;
+      });
+      if (!selected.length) {
+        hint.textContent = max <= 1 ? `请选择 1 名玩家` : `已选 0 / ${max} · 可选 ${min}~${max} 人`;
+      } else {
+        hint.textContent = `已选：${names.join('、')}` + (max > 1 ? `（${selected.length}/${max}）` : '');
+      }
+      conf.disabled = selected.length < min || selected.length > max;
+      document.querySelectorAll('#playerPickGrid .player-pick-card').forEach((btn) => {
+        const nr = Number(btn.dataset.actor);
+        btn.classList.toggle('picked', selected.includes(nr));
+        const badge = btn.querySelector('.pick-badge');
+        if (badge) {
+          const i = selected.indexOf(nr);
+          badge.textContent = i >= 0 ? (max > 1 ? `目标 ${i + 1}` : '已选') : '';
+        }
+      });
+    }
+
+    function openPlayerPicker(opts) {
+      if (!view || !view.players || !view.players.length) return;
+      closeSwapPicker();
+      const players = (opts.players || view.players).slice();
+      // 固定展示最多 4 人，按 actorNr 排序
+      players.sort((a, b) => a.actorNr - b.actorNr);
+      while (players.length < 4) {
+        players.push(null);
+      }
+      const min = opts.min == null ? 1 : opts.min;
+      const max = opts.max == null ? 1 : opts.max;
+      const selectable = opts.selectable || ((p) => p && p.alive);
+      playerPickState = {
+        min,
+        max,
+        selected: [],
+        onConfirm: opts.onConfirm || null,
+        onExtra: opts.onExtra || null,
+        onCancel: opts.onCancel || null
+      };
+
+      document.getElementById('playerPickTitle').textContent = opts.title || '选择目标';
+      document.getElementById('playerPickSub').textContent = opts.sub || '点选玩家释放效果';
+      document.getElementById('playerPickConfirm').textContent = opts.confirmLabel || '确认';
+      const extraBtn = document.getElementById('playerPickExtra');
+      if (opts.extraLabel && opts.onExtra) {
+        extraBtn.style.display = '';
+        extraBtn.textContent = opts.extraLabel;
+      } else {
+        extraBtn.style.display = 'none';
+      }
+
+      const grid = document.getElementById('playerPickGrid');
+      grid.innerHTML = players.slice(0, 4).map((p, slot) => {
+        if (!p) {
+          return `<button type="button" class="player-pick-card" disabled>
+            <div class="pick-art"><span class="glyph">—</span></div>
+            <div class="pick-name">空位</div>
+            <div class="pick-meta">座位 ${slot + 1}</div>
+            <div class="pick-badge"></div>
+          </button>`;
+        }
+        const role = roleMeta(p.role);
+        const isMe = Number(p.actorNr) === Number(myActorNr);
+        const can = selectable(p);
+        const art = role.art
+          ? `<img src="${role.art}" alt="${role.name}" draggable="false">`
+          : `<span class="glyph">${role.glyph}</span>`;
+        const name = isMe ? `你 · #${p.actorNr}` : `${p.name} · #${p.actorNr}`;
+        const meta = `${role.name}${p.alive ? '' : ' · 出局'}${p.team != null && view.mode === 'team' ? (p.team === 0 ? ' · 红' : ' · 蓝') : ''}`;
+        return `<button type="button" class="player-pick-card" data-actor="${p.actorNr}" ${can ? '' : 'disabled'}>
+          <div class="pick-art">${art}</div>
+          <div class="pick-name">${name}</div>
+          <div class="pick-meta">${meta}</div>
+          <div class="pick-badge"></div>
+        </button>`;
+      }).join('');
+
+      grid.querySelectorAll('.player-pick-card[data-actor]').forEach((btn) => {
+        if (btn.disabled) return;
+        btn.onclick = () => {
+          if (!playerPickState) return;
+          const nr = Number(btn.dataset.actor);
+          const pos = playerPickState.selected.indexOf(nr);
+          if (pos >= 0) {
+            playerPickState.selected.splice(pos, 1);
+          } else if (playerPickState.selected.length < playerPickState.max) {
+            playerPickState.selected.push(nr);
+          } else if (playerPickState.max === 1) {
+            playerPickState.selected = [nr];
+          } else {
+            playerPickState.selected[playerPickState.selected.length - 1] = nr;
+          }
+          refreshPlayerPickHint();
+        };
+      });
+
+      refreshPlayerPickHint();
+      document.getElementById('playerPickOverlay').classList.add('show');
+    }
+
+    document.getElementById('playerPickCancel').onclick = () => {
+      const cancel = playerPickState && playerPickState.onCancel;
+      closePlayerPicker();
+      if (cancel) cancel();
+    };
+
+    document.getElementById('playerPickConfirm').onclick = () => {
+      if (!playerPickState) return;
+      const { selected, min, max, onConfirm } = playerPickState;
+      if (selected.length < min || selected.length > max) return;
+      const nrs = selected.slice();
+      closePlayerPicker();
+      if (onConfirm) onConfirm(nrs);
+    };
+
+    document.getElementById('playerPickExtra').onclick = () => {
+      if (!playerPickState || !playerPickState.onExtra) return;
+      const extra = playerPickState.onExtra;
+      closePlayerPicker();
+      extra();
+    };
+
+    function closeSwapPicker() {
+      swapPickPending = null;
+      swapPickSelected = [];
+      document.getElementById('swapPickOverlay').classList.remove('show');
+      document.getElementById('swapPickRow').innerHTML = '';
+      document.getElementById('swapPickConfirm').disabled = true;
+      document.getElementById('swapPickHint').textContent = '已选 0 / 2';
+    }
+
+    function refreshSwapPickHint() {
+      const n = swapPickSelected.length;
+      const hint = document.getElementById('swapPickHint');
+      const conf = document.getElementById('swapPickConfirm');
+      if (n === 0) hint.textContent = '已选 0 / 2 · 点击两发弹药';
+      else if (n === 1) hint.textContent = `已选第 ${swapPickSelected[0] + 1} 发 · 再点另一发`;
+      else hint.textContent = `交换第 ${swapPickSelected[0] + 1} 发 ↔ 第 ${swapPickSelected[1] + 1} 发`;
+      conf.disabled = n !== 2;
+      document.querySelectorAll('#swapPickRow .ammo-pick-shell').forEach((btn) => {
+        const idx = Number(btn.dataset.index);
+        btn.classList.toggle('picked', swapPickSelected.includes(idx));
+      });
+    }
+
+    function openSwapPicker(itemIndex) {
+      if (!view || !view.magazineCount || view.magazineCount < 2) {
+        alert('弹药不足两发，无法换弹');
+        return;
+      }
+      closePlayerPicker();
+      swapPickPending = { itemIndex };
+      swapPickSelected = [];
+      const row = document.getElementById('swapPickRow');
+      const count = view.magazineCount;
+      row.innerHTML = Array.from({ length: count }, (_, i) => `
+        <button type="button" class="ammo-pick-shell" data-index="${i}" aria-label="第 ${i + 1} 发">
+          <span class="shell unknown"></span>
+          <span class="ammo-pick-ord">第 ${i + 1} 发</span>
+        </button>
+      `).join('');
+      row.querySelectorAll('.ammo-pick-shell').forEach((btn) => {
+        btn.onclick = () => {
+          const idx = Number(btn.dataset.index);
+          const pos = swapPickSelected.indexOf(idx);
+          if (pos >= 0) {
+            swapPickSelected.splice(pos, 1);
+          } else if (swapPickSelected.length < 2) {
+            swapPickSelected.push(idx);
+          } else {
+            // 已选两发时，再点替换第二发
+            swapPickSelected[1] = idx;
+          }
+          refreshSwapPickHint();
+        };
+      });
+      document.getElementById('swapPickSub').textContent =
+        `当前转轮 ${count} 发 · 点选两发进行交换（第 1 发为下一发）`;
+      refreshSwapPickHint();
+      document.getElementById('swapPickOverlay').classList.add('show');
+    }
+
+    document.getElementById('swapPickCancel').onclick = () => closeSwapPicker();
+
+    document.getElementById('swapPickConfirm').onclick = () => {
+      if (!swapPickPending || swapPickSelected.length !== 2) return;
+      const [i, j] = swapPickSelected;
+      if (i === j) return;
+      const itemIndex = swapPickPending.itemIndex;
+      closeSwapPicker();
+      sendAction({ type: 'use_item', itemIndex, payload: { i, j } });
       selectedHand = [];
     };
 
@@ -1698,14 +2304,6 @@
 
     document.getElementById('snakeBtn').onclick = () => sendAction({ type: 'rattlesnake_copy' });
     document.getElementById('snakePassBtn').onclick = () => sendAction({ type: 'rattlesnake_pass' });
-
-    document.getElementById('dbBtn').onclick = () => {
-      sendAction({
-        type: 'double_barrel',
-        index: Number(document.getElementById('dbIndex').value),
-        kind: document.getElementById('dbKind').value
-      });
-    };
 
     document.getElementById('reconnectBtn').onclick = () => {
       preferredRoom = document.getElementById('roomName').value.trim() || 'DevilRoom_101';
