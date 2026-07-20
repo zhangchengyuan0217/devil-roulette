@@ -25,6 +25,7 @@
         </div>
       </details>
       <button id="reconnectBtn" type="button">重连</button>
+      <button id="disbandBtn" type="button" style="display:none">解散房间</button>
       <span class="meta" id="roomInfo"></span>
     </div>
   </header>
@@ -251,7 +252,9 @@
     const EVT_STATE = 31;
     const EVT_FULL = 33;   // 完整权威状态备份（房主迁移用）
     const EVT_HELLO = 34;  // 新人进房请求同步
+    const EVT_DISBAND = 35; // 房主解散房间
 
+    const DEFAULT_ROOM = 'DevilRoom_101';
     const ROOM_OPTS = {
       maxPlayers: 4,
       // 空房保留 5 分钟，避免房主刷新瞬间房间被拆
@@ -273,8 +276,11 @@
     let myActorNr = 0;
     let lastRevealKey = '';
     let revealedOnce = false;
-    let preferredRoom = 'DevilRoom_101';
+    let preferredRoom = DEFAULT_ROOM;
     let offlineSim = false;
+    let joinInFlight = false;
+    let connectGeneration = 0; // 防止旧客户端回调污染新连接
+    let autoJoinDone = false; // 每个连接只自动进房一次
     let botTimer = null;
     let lastSpinToken = '';
     let spinAnimTimer = null;
@@ -748,22 +754,177 @@
     }
 
     function joinPreferredRoom(preferRejoin) {
-      preferredRoom = preferredRoom || 'DevilRoom_101';
+      if (!client) return;
+      if (client.isJoinedToRoom()) {
+        statusDiv.textContent = `已在房间 ${client.myRoom().name}`;
+        return;
+      }
+      if (joinInFlight) return;
+
+      preferredRoom = preferredRoom || DEFAULT_ROOM;
+      joinInFlight = true;
+
       if (preferRejoin) {
         gameLog(`尝试重连房间 ${preferredRoom}...`);
-        const ok = client.joinRoom(preferredRoom, { rejoin: true });
-        if (!ok) joinCreateRoom();
+        statusDiv.textContent = `正在重连房间 ${preferredRoom}...`;
         window.__rejoinPending = true;
+        const ok = client.joinRoom(preferredRoom, { rejoin: true });
+        if (!ok) {
+          gameLog('rejoin 调用失败，改为普通加入...');
+          joinCreateRoom();
+        }
         return;
       }
       joinCreateRoom();
     }
 
     function joinCreateRoom() {
+      if (!client) {
+        joinInFlight = false;
+        return;
+      }
       window.__rejoinPending = false;
-      preferredRoom = preferredRoom || 'DevilRoom_101';
+      preferredRoom = preferredRoom || DEFAULT_ROOM;
+      joinInFlight = true;
       gameLog(`加入/创建房间 ${preferredRoom}（空房保活开启）...`);
-      client.joinRoom(preferredRoom, { createIfNotExists: true }, ROOM_OPTS);
+      statusDiv.textContent = `正在加入房间 ${preferredRoom}...`;
+      const ok = client.joinRoom(preferredRoom, { createIfNotExists: true }, ROOM_OPTS);
+      if (!ok) {
+        joinInFlight = false;
+        statusDiv.textContent = '加入房间失败：尚未连上大厅，请点「重连」';
+        gameLog('joinRoom 返回 false（可能未连上 Master）');
+      }
+    }
+
+    function describeJoinError(errorCode, errorMsg) {
+      const code = Number(errorCode);
+      if (code === 32765) return '房间已满（最多 4 人），请稍后再试或让房内玩家离开';
+      if (code === 32764) return '房间已关闭，无法加入';
+      if (code === 32758) return '房间不存在';
+      if (code === 32748) return '找不到可重连的旧座位，将尝试普通加入';
+      if (code === 32749 || code === 32750) return '该账号已在房间内（可能开了多个标签页）';
+      return errorMsg || `错误码 ${errorCode}`;
+    }
+
+    function clearGameOverlays() {
+      [
+        'revealOverlay', 'firstSpinOverlay', 'ammoDrawOverlay', 'diceOverlay',
+        'ejectOverlay', 'itemFxOverlay', 'swapPickOverlay', 'playerPickOverlay',
+        'discardHandOverlay', 'dbDeclareOverlay', 'dbRevealOverlay', 'shootConfirmOverlay'
+      ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('show', 'landed', 'success', 'fail');
+      });
+    }
+
+    function resetToLobbyLocal(statusText) {
+      clearBotTimer();
+      clearGameOverlays();
+      gameState = null;
+      fullStateBackup = null;
+      view = { phase: 'lobby', players: [], turnOrder: [], currentTurn: 0, publicLog: [] };
+      myActorNr = 0;
+      selectedHand = [];
+      selectedTarget = null;
+      revealedOnce = false;
+      lastRevealKey = '';
+      joinInFlight = false;
+      window.__rejoinPending = false;
+      statusDiv.textContent = statusText || '已回到大厅';
+      document.getElementById('roomInfo').textContent = '';
+      render();
+    }
+
+    /** 房主解散：关闭房间 → 通知全员 → 自己离开 */
+    function disbandRoomAsHost() {
+      if (offlineSim) {
+        alert('模拟对局中请用「退出模拟」');
+        return;
+      }
+      if (!client || !client.isJoinedToRoom()) {
+        alert('当前不在房间内');
+        return;
+      }
+      if (!isHost()) {
+        alert('只有房主可以解散房间');
+        return;
+      }
+      if (!confirm('确定解散房间？所有玩家都会退出，对局进度将清空。')) return;
+
+      const roomName = client.myRoom().name || preferredRoom;
+      gameLog(`房主解散房间 ${roomName}...`);
+      statusDiv.textContent = '正在解散房间...';
+
+      try {
+        const room = client.myRoom();
+        room.setIsOpen(false);
+        room.setIsVisible(false);
+        // 尽快回收空房，避免别人又重连进来
+        if (typeof room.setEmptyRoomLiveTime === 'function') room.setEmptyRoomLiveTime(1);
+        else if (typeof room.setRoomTTL === 'function') room.setRoomTTL(1);
+        try { room.setCustomProperty('gs', null); } catch (e) {}
+      } catch (e) {
+        console.warn('close room props failed', e);
+      }
+
+      try {
+        client.raiseEvent(EVT_DISBAND, { room: roomName, by: myActorNr }, {
+          receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
+        });
+      } catch (e) {
+        console.warn('disband event failed', e);
+      }
+
+      // 稍等事件发出，再离开
+      setTimeout(() => {
+        try {
+          if (client && client.isJoinedToRoom()) client.leaveRoom();
+        } catch (e) {}
+        sessionStorage.removeItem('dr_room');
+        preferredRoom = DEFAULT_ROOM;
+        // 保持 autoJoinDone=true，避免立刻又自动加回去
+        resetToLobbyLocal(`房间 ${roomName} 已解散 · 点「重连」可再开新局`);
+        gameLog(`—— 房间 ${roomName} 已解散 ——`);
+      }, 120);
+    }
+
+    function handleRoomDisbanded(payload) {
+      const roomName = (payload && payload.room) || preferredRoom || '房间';
+      gameLog(`收到解散通知：${roomName}`);
+      try {
+        if (client && client.isJoinedToRoom()) client.leaveRoom();
+      } catch (e) {}
+      sessionStorage.removeItem('dr_room');
+      preferredRoom = DEFAULT_ROOM;
+      resetToLobbyLocal(`房间 ${roomName} 已被房主解散 · 点「重连」可再加入`);
+    }
+
+    function disconnectClient() {
+      return new Promise((resolve) => {
+        const old = client;
+        if (!old) {
+          resolve();
+          return;
+        }
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(finish, 1500);
+        try {
+          const prev = old.onStateChange;
+          old.onStateChange = function (state) {
+            try { if (typeof prev === 'function') prev.call(old, state); } catch (e) {}
+            if (state === LBC.State.Disconnected) finish();
+          };
+          old.disconnect();
+        } catch (e) {
+          finish();
+        }
+      });
     }
 
     function hpPipsHtml(hp, maxHp = 6) {
@@ -1629,6 +1790,12 @@
       document.getElementById('startBtn').disabled = offlineSim || !(isHost() && (!view || view.phase === 'lobby' || view.phase === 'ended'));
       document.getElementById('simBtn').disabled = false;
       document.getElementById('exitSimBtn').style.display = offlineSim ? '' : 'none';
+      const disbandBtn = document.getElementById('disbandBtn');
+      if (disbandBtn) {
+        // 仅房主、且已在真实房间时可解散
+        disbandBtn.style.display = (inRoom && isHost()) ? '' : 'none';
+        disbandBtn.disabled = !inRoom || !isHost();
+      }
 
       if (!view || view.phase === 'lobby') {
         document.getElementById('lobbyPanel').style.display = '';
@@ -1996,41 +2163,72 @@
         statusDiv.textContent = 'Photon SDK 加载失败';
         return;
       }
+
+      const gen = ++connectGeneration;
+      joinInFlight = false;
+      autoJoinDone = false;
+      window.__rejoinPending = false;
       client = new LBC(Photon.ConnectionProtocol.Wss, APP_ID, APP_VERSION);
       client.setUserId(getStableUserId());
 
       client.onError = function (errorCode, errorMsg) {
+        if (gen !== connectGeneration) return;
+        joinInFlight = false;
         statusDiv.textContent = `连接错误: ${errorCode} - ${errorMsg}`;
         gameLog(`错误: [${errorCode}] ${errorMsg}`);
       };
 
       client.onOperationResponse = function (errorCode, errorMsg, code) {
+        if (gen !== connectGeneration) return;
         if (!errorCode) return;
         gameLog(`操作失败 op=${code} code=${errorCode} msg=${errorMsg}`);
-        // rejoin 失败则普通加入
-        if (window.__rejoinPending && (code === 226 || code === 227)) {
-          gameLog('重连原座位失败，改为普通加入同一房间名...');
+
+        // rejoin 失败（座位不在 / 找不到 inactive）→ 普通加入
+        if (window.__rejoinPending && (code === 226 || code === 227 || errorCode === 32748 || errorCode === 32758)) {
+          gameLog('重连原座位失败，改为普通加入同一房间...');
           joinCreateRoom();
+          return;
         }
+
+        joinInFlight = false;
+        const tip = describeJoinError(errorCode, errorMsg);
+        statusDiv.textContent = `加入失败：${tip}`;
       };
 
       client.onStateChange = function (state) {
+        if (gen !== connectGeneration) return;
+        const name = (LBC.StateToName && LBC.StateToName[state]) || String(state);
+
         if (state === LBC.State.JoinedLobby) {
+          // 每个连接只自动进房一次，避免房间满员时反复重试刷屏
+          if (autoJoinDone || joinInFlight) return;
+          if (client.isJoinedToRoom && client.isJoinedToRoom()) return;
+          autoJoinDone = true;
           statusDiv.textContent = '已连上大厅，正在进入房间...';
-          preferredRoom = preferredRoom || 'DevilRoom_101';
+          preferredRoom = sessionStorage.getItem('dr_room') || preferredRoom || DEFAULT_ROOM;
           joinPreferredRoom(!!preferRejoin);
+        } else if (state === LBC.State.ConnectingToNameServer || state === LBC.State.ConnectingToMasterserver) {
+          statusDiv.textContent = '正在连接服务器...';
+        } else if (state === LBC.State.ConnectingToGameserver) {
+          statusDiv.textContent = '正在进入游戏服...';
         } else if (state === LBC.State.Disconnected) {
+          joinInFlight = false;
           statusDiv.textContent = '已断开连接';
+        } else if (state === LBC.State.Error) {
+          joinInFlight = false;
+          statusDiv.textContent = `连接异常（${name}）`;
         }
       };
 
       client.onJoinRoom = function () {
+        if (gen !== connectGeneration) return;
         myActorNr = client.myActor().actorNr;
         window.__rejoinPending = false;
-        preferredRoom = client.myRoom().name || preferredRoom;
+        joinInFlight = false;
+        preferredRoom = (client.myRoom() && client.myRoom().name) || preferredRoom || DEFAULT_ROOM;
         sessionStorage.setItem('dr_room', preferredRoom);
-        statusDiv.textContent = `已进入房间 · Master #${client.myRoomMasterActorNr()}`;
-        gameLog(`加入成功，我是 #${myActorNr}，UserId=${client.getUserId()}，Master=#${client.myRoomMasterActorNr()}`);
+        statusDiv.textContent = `已进入房间 ${preferredRoom} · #${myActorNr}${isHost() ? ' · 房主' : ''}`;
+        gameLog(`加入成功，房间=${preferredRoom}，我是 #${myActorNr}，UserId=${client.getUserId()}，Master=#${client.myRoomMasterActorNr()}`);
 
         // 若房间里已有存档且我是房主，恢复
         if (isHost()) {
@@ -2048,15 +2246,18 @@
       };
 
       client.onActorJoin = function (actor) {
+        if (gen !== connectGeneration) return;
         gameLog(`玩家加入 #${actor.actorNr}`);
         if (isHost() && gameState) persistAndBroadcast();
         render();
       };
 
       client.onActorLeave = function (actor) {
+        if (gen !== connectGeneration) return;
         gameLog(`玩家离开 #${actor.actorNr}`);
         // Master 可能已迁移到自己
         setTimeout(() => {
+          if (gen !== connectGeneration) return;
           if (tryBecomeHostWithBackup('原房主离开')) {
             // ok
           }
@@ -2065,6 +2266,7 @@
       };
 
       client.onEvent = function (code, content, actorNr) {
+        if (gen !== connectGeneration) return;
         if (code === EVT_ACTION) {
           hostProcessAction(actorNr, content);
         } else if (code === EVT_STATE) {
@@ -2078,11 +2280,26 @@
           }
         } else if (code === EVT_HELLO) {
           if (isHost() && gameState) persistAndBroadcast();
+        } else if (code === EVT_DISBAND) {
+          // 自己是发起方时也会收到 All；用短延迟避免和主动 leave 打架
+          if (isHost() && Number(actorNr) === Number(myActorNr)) return;
+          handleRoomDisbanded(content || {});
         }
       };
 
       gameLog(`连接 Photon（asia），UserId=${client.getUserId()}...`);
+      statusDiv.textContent = '正在连接服务器...';
       client.connectToRegionMaster('asia');
+    }
+
+    async function reconnectClient(preferRejoin) {
+      preferredRoom = sessionStorage.getItem('dr_room') || preferredRoom || DEFAULT_ROOM;
+      statusDiv.textContent = '正在重连...';
+      joinInFlight = false;
+      gameState = null;
+      view = null;
+      await disconnectClient();
+      createClient(!!preferRejoin);
     }
 
     document.getElementById('startBtn').onclick = () => {
@@ -2778,13 +2995,10 @@
     document.getElementById('snakeBtn').onclick = () => sendAction({ type: 'rattlesnake_copy' });
     document.getElementById('snakePassBtn').onclick = () => sendAction({ type: 'rattlesnake_pass' });
 
+    document.getElementById('disbandBtn').onclick = () => disbandRoomAsHost();
+
     document.getElementById('reconnectBtn').onclick = () => {
-      preferredRoom = sessionStorage.getItem('dr_room') || preferredRoom || 'DevilRoom_101';
-      if (client) try { client.disconnect(); } catch (e) {}
-      // 不清空 fullStateBackup：同页重连还能用；刷新则靠房间属性/他人备份
-      gameState = null;
-      view = null;
-      createClient(true);
+      reconnectClient(true);
     };
 
     // 刷新后自动尝试 rejoin 上次房间

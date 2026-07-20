@@ -118,6 +118,17 @@ button.primary {
   font-size: 0.82rem;
 }
 
+#disbandBtn {
+  border-color: rgba(180, 60, 50, 0.55);
+  color: #f0b4ae;
+  background: rgba(80, 22, 18, 0.55);
+}
+
+#disbandBtn:hover {
+  border-color: rgba(220, 90, 70, 0.8);
+  color: #ffd4cf;
+}
+
 /* —— 大厅 —— */
 .lobby-shell {
   flex: 1 1 auto;
