@@ -24,7 +24,6 @@
           <div id="log"></div>
         </div>
       </details>
-      <label class="meta">房间 <input id="roomName" value="DevilRoom_101" style="width:120px"></label>
       <button id="reconnectBtn" type="button">重连</button>
       <span class="meta" id="roomInfo"></span>
     </div>
@@ -33,7 +32,7 @@
   <section class="lobby-shell" id="lobbyPanel">
     <h2>等待开局</h2>
     <p class="meta">四人组队：上下为队友、左右为对手（红蓝分队）。也可先点「模拟对局」单人预览。</p>
-    <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+    <div class="lobby-actions">
       <select id="modeSelect">
         <option value="team" selected>组队 2v2（上下队友 · 红蓝）</option>
         <option value="ffa">混战</option>
@@ -749,12 +748,11 @@
     }
 
     function joinPreferredRoom(preferRejoin) {
-      preferredRoom = document.getElementById('roomName').value.trim() || 'DevilRoom_101';
+      preferredRoom = preferredRoom || 'DevilRoom_101';
       if (preferRejoin) {
         gameLog(`尝试重连房间 ${preferredRoom}...`);
         const ok = client.joinRoom(preferredRoom, { rejoin: true });
         if (!ok) joinCreateRoom();
-        // 若 rejoin 失败，会在 onOperationResponse 里回退
         window.__rejoinPending = true;
         return;
       }
@@ -763,6 +761,7 @@
 
     function joinCreateRoom() {
       window.__rejoinPending = false;
+      preferredRoom = preferredRoom || 'DevilRoom_101';
       gameLog(`加入/创建房间 ${preferredRoom}（空房保活开启）...`);
       client.joinRoom(preferredRoom, { createIfNotExists: true }, ROOM_OPTS);
     }
@@ -2018,7 +2017,7 @@
       client.onStateChange = function (state) {
         if (state === LBC.State.JoinedLobby) {
           statusDiv.textContent = '已连上大厅，正在进入房间...';
-          preferredRoom = document.getElementById('roomName').value.trim() || 'DevilRoom_101';
+          preferredRoom = preferredRoom || 'DevilRoom_101';
           joinPreferredRoom(!!preferRejoin);
         } else if (state === LBC.State.Disconnected) {
           statusDiv.textContent = '已断开连接';
@@ -2028,6 +2027,7 @@
       client.onJoinRoom = function () {
         myActorNr = client.myActor().actorNr;
         window.__rejoinPending = false;
+        preferredRoom = client.myRoom().name || preferredRoom;
         sessionStorage.setItem('dr_room', preferredRoom);
         statusDiv.textContent = `已进入房间 · Master #${client.myRoomMasterActorNr()}`;
         gameLog(`加入成功，我是 #${myActorNr}，UserId=${client.getUserId()}，Master=#${client.myRoomMasterActorNr()}`);
@@ -2779,7 +2779,7 @@
     document.getElementById('snakePassBtn').onclick = () => sendAction({ type: 'rattlesnake_pass' });
 
     document.getElementById('reconnectBtn').onclick = () => {
-      preferredRoom = document.getElementById('roomName').value.trim() || 'DevilRoom_101';
+      preferredRoom = sessionStorage.getItem('dr_room') || preferredRoom || 'DevilRoom_101';
       if (client) try { client.disconnect(); } catch (e) {}
       // 不清空 fullStateBackup：同页重连还能用；刷新则靠房间属性/他人备份
       gameState = null;
@@ -2789,10 +2789,7 @@
 
     // 刷新后自动尝试 rejoin 上次房间
     const lastRoom = sessionStorage.getItem('dr_room');
-    if (lastRoom) {
-      document.getElementById('roomName').value = lastRoom;
-      preferredRoom = lastRoom;
-    }
+    if (lastRoom) preferredRoom = lastRoom;
     createClient(!!lastRoom);
   </script>
 </body>

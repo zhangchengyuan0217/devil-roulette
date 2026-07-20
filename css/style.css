@@ -134,6 +134,14 @@ button.primary {
   overflow: auto;
 }
 
+.lobby-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 .lobby-shell h2 {
   font-family: var(--font-display);
   color: var(--gold);
