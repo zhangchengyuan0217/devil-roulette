@@ -13,12 +13,11 @@ const AWAITING_ANIM_MS = {
   double_barrel_reveal: 3800
 };
 
-/** 需玩家操作的窗口超时（弃牌 / 火药 / 双管 / 响尾蛇施放） */
+/** 需玩家操作的窗口超时（弃牌 / 双管 / 响尾蛇施放） */
 const INTERACTIVE_AWAITING_MS = 30000;
 
 const AWAITING_TIMEOUT_MS = Object.assign({}, AWAITING_ANIM_MS, {
   discard_hand: INTERACTIVE_AWAITING_MS,
-  gunpowder_peek: INTERACTIVE_AWAITING_MS,
   double_barrel: INTERACTIVE_AWAITING_MS,
   snake_cast: INTERACTIVE_AWAITING_MS
 });
@@ -58,9 +57,6 @@ function resolveExpiredAwaiting(state) {
       return true;
     case 'discard_hand':
       timeoutDiscardHand(state);
-      return true;
-    case 'gunpowder_peek':
-      timeoutGunpowderPeek(state);
       return true;
     case 'double_barrel':
       timeoutDoubleBarrel(state);
@@ -128,8 +124,7 @@ function initPlayers(state, actors, mode) {
     hand: [],
     alive: true,
     team: mode === 'team' ? (i % 2) : i, // team 0/1 for 2v2; ffa unique
-    skipNextTurn: false,
-    peekedBottom: null
+    skipNextTurn: false
   }));
 
   if (mode === 'team' && state.players.length === 4) {
@@ -263,18 +258,6 @@ function timeoutDiscardHand(state) {
   }
   logState(state, `${p.name} 弃牌超时，系统代为弃置手牌末尾 ${idxs.length} 张。`);
   discardHandCards(state, actorNr, idxs);
-}
-
-function timeoutGunpowderPeek(state) {
-  if (!state.awaiting || state.awaiting.type !== 'gunpowder_peek') return;
-  const actorNr = state.awaiting.actorNr;
-  const player = getPlayer(state, actorNr);
-  state.awaiting = null;
-  if (!player) return;
-  player.peekedBottom = null;
-  logState(state, `${player.name}（火药）超时，视为不查看。`);
-  logState(state, `轮到 ${player.name} 行动。弹药剩余 ${state.magazine.length}。`);
-  tryStartHandDiscard(state);
 }
 
 function timeoutDoubleBarrel(state) {
@@ -547,48 +530,16 @@ function moveToNextPlayer(state) {
 }
 
 function onTurnStart(state, player) {
-  player.peekedBottom = null;
-  if (player.role === 'gunpowder' && state.magazine.length > 0) {
-    state.awaiting = stampAwaitingExpiry(
-      {
-        type: 'gunpowder_peek',
-        actorNr: player.actorNr,
-        name: player.name,
-        magBottomCount: Math.min(2, state.magazine.length),
-        token: `gp-${state.round}-${player.actorNr}-${Date.now()}`
-      },
-      'gunpowder_peek'
-    );
-    logState(
-      state,
-      `${player.name}（火药）可选择查看弹药堆底部 ${state.awaiting.magBottomCount} 张（限时 ${state.awaiting.seconds} 秒）。`
-    );
-    return;
-  }
   logState(state, `轮到 ${player.name} 行动。弹药剩余 ${state.magazine.length}。`);
 }
 
-function resolveGunpowderPeek(state, actorNr, accept) {
-  if (!state.awaiting || state.awaiting.type !== 'gunpowder_peek') {
-    return { ok: false, reason: '无需火药抉择' };
-  }
-  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
-    return { ok: false, reason: '不是你的火药窗口' };
-  }
-  const player = getPlayer(state, actorNr);
-  state.awaiting = null;
-  if (!player) return { ok: false, reason: '玩家不存在' };
-  if (accept && state.magazine.length > 0) {
-    const bottom = state.magazine.slice(0, Math.min(2, state.magazine.length));
-    player.peekedBottom = bottom.slice();
-    logState(state, `${player.name}（火药）查看了弹药堆底部 ${bottom.length} 张（仅自己可见）。`);
-  } else {
-    player.peekedBottom = null;
-    logState(state, `${player.name}（火药）选择不查看底部弹药。`);
-  }
-  logState(state, `轮到 ${player.name} 行动。弹药剩余 ${state.magazine.length}。`);
-  tryStartHandDiscard(state);
-  return { ok: true };
+function gunpowderBottomFor(state, viewer) {
+  if (!viewer || viewer.role !== 'gunpowder' || !viewer.alive) return null;
+  if (state.phase !== 'playing') return null;
+  const cur = currentPlayer(state);
+  if (!cur || Number(cur.actorNr) !== Number(viewer.actorNr)) return null;
+  if (!state.magazine.length) return [];
+  return state.magazine.slice(0, Math.min(2, state.magazine.length));
 }
 
 function linkPairLabel(state, pair) {
@@ -1440,7 +1391,7 @@ function publicView(state, viewerActorNr) {
       ? {
           hand: viewer.hand.slice(),
           lastPeek: viewer.lastPeek || null,
-          peekedBottom: viewer.peekedBottom || null
+          gunpowderBottom: gunpowderBottomFor(state, viewer)
         }
       : null,
     lastItemForSnake: state.lastItemForSnake
@@ -1475,8 +1426,6 @@ function handleAction(state, actorNr, action) {
       return skipDoubleBarrel(state, actorNr);
     case 'double_barrel_done':
       return continueAfterDoubleBarrelReveal(state);
-    case 'gunpowder_peek':
-      return resolveGunpowderPeek(state, actorNr, !!action.accept);
     case 'discard_hand':
       return discardHandCards(state, actorNr, action.indexes);
     case 'ammo_draw_done':

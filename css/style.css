@@ -117,7 +117,7 @@ button.primary {
 }
 
 .table-wrap.layout-cross {
-  grid-template-rows: auto minmax(360px, 1fr) auto auto;
+  grid-template-rows: auto minmax(440px, 1fr) auto auto;
   overflow: visible;
 }
 
@@ -131,23 +131,24 @@ button.primary {
 }
 
 .round-banner strong { color: var(--gold); }
+.round-banner .seat-nr { color: var(--gold); }
 
 /* 四人：上 / 左 / 桌 / 右 / 下 —— 对面是队友 */
 .board-arena {
   display: grid;
-  grid-template-columns: minmax(200px, 220px) minmax(220px, 1fr) minmax(200px, 220px);
-  grid-template-rows: auto minmax(200px, 1fr) auto;
+  grid-template-columns: minmax(160px, 200px) minmax(320px, 1fr) minmax(160px, 200px);
+  grid-template-rows: auto minmax(260px, 1fr) auto;
   grid-template-areas:
     ". top ."
     "left felt right"
     ". bottom .";
-  gap: 8px 12px;
+  gap: 8px 10px;
   align-items: center;
   justify-items: center;
-  max-width: 1100px;
+  max-width: 1280px;
   margin: 0 auto;
   width: 100%;
-  min-height: 420px;
+  min-height: 520px;
   position: relative;
   z-index: 1;
 }
@@ -170,7 +171,12 @@ button.primary {
 .seat-left { grid-area: left; }
 .seat-right { grid-area: right; }
 .seat-bottom { grid-area: bottom; min-height: 0; }
-.board-arena .felt { grid-area: felt; width: 100%; max-width: 420px; }
+.board-arena .felt {
+  grid-area: felt;
+  width: 100%;
+  max-width: 640px;
+  min-height: 280px;
+}
 
 .seat-slot.team-red {
   background: linear-gradient(180deg, rgba(180, 40, 40, 0.2), rgba(80, 16, 16, 0.1));
@@ -214,21 +220,21 @@ button.primary {
   position: relative;
   margin: 0 auto;
   width: 100%;
-  max-width: 520px;
-  min-height: 200px;
-  border-radius: 50% / 28%;
+  max-width: 640px;
+  min-height: 280px;
+  border-radius: 50% / 30%;
   background:
     radial-gradient(ellipse at center, #2f5a45 0%, var(--felt) 45%, var(--felt-deep) 100%);
-  border: 10px solid #5a3d28;
+  border: 12px solid #5a3d28;
   box-shadow:
-    inset 0 0 40px rgba(0,0,0,0.45),
-    0 12px 30px rgba(0,0,0,0.5);
+    inset 0 0 48px rgba(0,0,0,0.45),
+    0 14px 34px rgba(0,0,0,0.5);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 16px;
+  gap: 14px;
+  padding: 28px 24px;
 }
 
 @media (max-width: 720px) {
@@ -242,14 +248,20 @@ button.primary {
       "bottom bottom";
     min-height: auto;
   }
+
+  .board-arena .felt,
+  .felt {
+    max-width: 100%;
+    min-height: 220px;
+  }
 }
 
 .cylinder {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: center;
-  max-width: 280px;
+  max-width: 360px;
 }
 
 .loadout-row {
@@ -296,9 +308,9 @@ button.primary {
 }
 
 .shell {
-  width: 18px;
-  height: 28px;
-  border-radius: 4px 4px 6px 6px;
+  width: 22px;
+  height: 34px;
+  border-radius: 4px 4px 7px 7px;
   background: linear-gradient(180deg, #8a7a62, #4a4032);
   border: 1px solid #2a2218;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
@@ -367,9 +379,10 @@ button.primary {
 
 .seat-shot-wrap {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 6px;
   position: relative;
   z-index: 3;
   pointer-events: auto;
@@ -378,8 +391,8 @@ button.primary {
 .seat-shoot-btn {
   flex: 0 0 auto;
   writing-mode: horizontal-tb;
-  padding: 10px 12px;
-  min-width: 48px;
+  padding: 8px 16px;
+  min-width: 64px;
   border-radius: 10px;
   border: 1px solid rgba(212, 84, 74, 0.55);
   background: linear-gradient(180deg, #8a322c, #5a1a16);
@@ -463,6 +476,85 @@ button.primary {
   pointer-events: none;
 }
 
+.gunpowder-dock {
+  margin: 8px auto 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px 18px 12px;
+  border-radius: 14px;
+  background: rgba(18, 12, 8, 0.92);
+  border: 1px solid rgba(212, 168, 87, 0.35);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.gunpowder-dock[hidden] {
+  display: none !important;
+}
+
+.gunpowder-dock-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: rgba(240, 230, 216, 0.72);
+}
+
+.gunpowder-dock-shells {
+  display: flex;
+  gap: 14px;
+}
+
+.gunpowder-dock-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 52px;
+}
+
+.gunpowder-dock-item .shell {
+  width: 36px;
+  height: 52px;
+  border-radius: 6px 6px 10px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.gunpowder-dock-item .shell.live {
+  background: linear-gradient(180deg, #e07068, #9a2f28);
+  color: #fff5f2;
+  border-color: #5a1c18;
+}
+
+.gunpowder-dock-item .shell.blank {
+  background: linear-gradient(180deg, #ddd0b4, #9a8c72);
+  color: #2a2418;
+  border-color: #5a5040;
+}
+
+.gunpowder-dock-item .shell.special {
+  background: linear-gradient(180deg, #e0c078, #5aa8c8);
+  color: #1a1410;
+  border-color: #6a5830;
+}
+
+.gunpowder-dock-ord {
+  font-size: 0.7rem;
+  color: rgba(240, 230, 216, 0.55);
+}
+
+.gunpowder-dock-name {
+  font-size: 0.8rem;
+  color: var(--gold);
+}
+
 .actions-dock {
   display: flex;
   flex-wrap: wrap;
@@ -509,6 +601,12 @@ button.primary {
 .seat-name {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.seat-nr {
+  font-weight: 800;
+  color: #f2e6d4;
+  letter-spacing: 0.02em;
 }
 
 .role-card {

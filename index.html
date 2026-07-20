@@ -74,6 +74,10 @@
         <div class="hand-label">我的道具手牌（每轮开局抽 2 张，点选后可使用）</div>
         <div class="hand-fan" id="hand"></div>
         <div class="private-toast" id="privateInfo"></div>
+        <div class="gunpowder-dock" id="gunpowderDock" hidden>
+          <div class="gunpowder-dock-label">火药 · 弹药堆底部</div>
+          <div class="gunpowder-dock-shells" id="gunpowderDockShells"></div>
+        </div>
       </div>
     </div>
 
@@ -185,17 +189,6 @@
     </div>
   </div>
 
-  <div class="ammo-pick-overlay" id="gunpowderOverlay">
-    <div class="ammo-pick-panel">
-      <div class="ammo-pick-title">火药</div>
-      <div class="ammo-pick-sub" id="gunpowderSub">回合开始：可查看弹药堆底部两张</div>
-      <div class="ammo-pick-actions" id="gunpowderActions">
-        <button type="button" id="gunpowderSkip">跳过</button>
-        <button type="button" class="primary" id="gunpowderPeek">查看底部</button>
-      </div>
-    </div>
-  </div>
-
   <div class="ammo-pick-overlay" id="shootConfirmOverlay">
     <div class="ammo-pick-panel">
       <div class="ammo-pick-title">确认开枪</div>
@@ -300,7 +293,6 @@
     let playerPickState = null;
     let discardHandSelected = [];
     let lastDiscardToken = '';
-    let lastGunpowderToken = '';
     let lastSnakeCastToken = '';
     let awaitingWatchdog = null;
     let interactiveCountdownTimer = null;
@@ -416,11 +408,6 @@
         botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 700);
         return;
       }
-      if (gameState.awaiting && gameState.awaiting.type === 'gunpowder_peek') {
-        if (gameState.awaiting.actorNr === myActorNr) return;
-        botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 700);
-        return;
-      }
       if (gameState.awaiting && gameState.awaiting.type === 'snake_cast') {
         if (gameState.awaiting.actorNr === myActorNr) return;
         botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 800);
@@ -471,18 +458,6 @@
         const idxs = [];
         for (let i = bot.hand.length - 1; i >= 0 && idxs.length < a.need; i--) idxs.push(i);
         handleAction(gameState, a.actorNr, { type: 'discard_hand', indexes: idxs });
-        refreshLocalView();
-        return;
-      }
-
-      // 火药抉择（机器人）
-      if (gameState.awaiting && gameState.awaiting.type === 'gunpowder_peek') {
-        const a = gameState.awaiting;
-        if (a.actorNr === myActorNr) return;
-        handleAction(gameState, a.actorNr, {
-          type: 'gunpowder_peek',
-          accept: Math.random() < 0.7
-        });
         refreshLocalView();
         return;
       }
@@ -780,7 +755,6 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
-      maybeShowGunpowder();
       maybeShowSnakeCast();
       armAwaitingWatchdog();
       armInteractiveCountdown();
@@ -911,7 +885,6 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
-      maybeShowGunpowder();
       maybeShowSnakeCast();
       armAwaitingWatchdog();
       armInteractiveCountdown();
@@ -1701,11 +1674,11 @@
           : '') +
         (view.phase === 'ended'
           ? (view.winner
-            ? ` · <strong style="color:#6fbf8a">玩家#${view.winner} 获胜</strong>`
+            ? ` · <strong style="color:#6fbf8a">玩家<span class="seat-nr">#${view.winner}</span> 获胜</strong>`
             : view.winnerTeam != null
               ? ` · <strong style="color:#6fbf8a">${view.winnerTeam === 0 ? '红队' : '蓝队'} 获胜</strong>`
               : ' · 结束')
-          : ` · 当前行动 <strong>#${curNr}</strong>`);
+          : ` · 当前行动 <span class="seat-nr">#${curNr}</span>`);
 
       // 中央弹药信息：已射出 / 本轮装弹
       const loadout = view.loadout || { live: 0, blank: 0, special: 0 };
@@ -1750,7 +1723,7 @@
       const myTurn = view.phase === 'playing' && !view.awaiting && curNr === Number(myActorNr);
       const fxActors = awaitingFxActors(view.awaiting);
 
-      function seatHtml(p, shotSide) {
+      function seatHtml(p) {
         const isMe = Number(p.actorNr) === Number(myActorNr);
         const ally = me && !isMe && view.mode === 'team' && p.team === me.team;
         const isCaster = fxActors.caster != null && Number(p.actorNr) === fxActors.caster;
@@ -1765,18 +1738,16 @@
           isCaster ? 'fx-caster' : '',
           isFxTarget ? 'fx-hit' : ''
         ].join(' ');
-        const name = isMe ? `你 · #${p.actorNr}` : `${p.name} #${p.actorNr}`;
+        const name = isMe
+          ? `你 · <span class="seat-nr">#${p.actorNr}</span>`
+          : `${p.name} <span class="seat-nr">#${p.actorNr}</span>`;
         const canShoot = myTurn && p.alive;
         const shootBtn = `<button type="button" class="seat-shoot-btn" data-shoot="${p.actorNr}" ${canShoot ? '' : 'disabled'}>开枪</button>`;
         const card = `<div class="${cls}" data-actor="${p.actorNr}" data-role="${p.role}" data-name="${p.name}">
           <div class="seat-name">${name}</div>
           ${roleCardHtml(p)}
         </div>`;
-        const side = shotSide || 'right';
-        if (side === 'left') {
-          return `<div class="seat-shot-wrap side-left">${shootBtn}${card}</div>`;
-        }
-        return `<div class="seat-shot-wrap side-right">${card}${shootBtn}</div>`;
+        return `<div class="seat-shot-wrap">${card}${shootBtn}</div>`;
       }
 
       function bindSeats(root) {
@@ -1799,7 +1770,7 @@
         });
       }
 
-      function paintSlot(el, player, teamClass, tag, shotSide) {
+      function paintSlot(el, player, teamClass, tag) {
         el.classList.remove('team-red', 'team-blue');
         if (teamClass) el.classList.add(teamClass);
         el.dataset.tag = tag || '';
@@ -1807,7 +1778,7 @@
           el.innerHTML = '';
           return;
         }
-        el.innerHTML = seatHtml(player, shotSide);
+        el.innerHTML = seatHtml(player);
         bindSeats(el);
       }
 
@@ -1841,14 +1812,14 @@
         const foeTagL = view.mode === 'team' ? (me.team === 0 ? '蓝队' : '红队') : '左侧';
         const foeTagR = view.mode === 'team' ? (me.team === 0 ? '蓝队' : '红队') : '右侧';
 
-        paintSlot(document.getElementById('seatTop'), topP, view.mode === 'team' ? myTeamClass : '', allyTag, 'right');
+        paintSlot(document.getElementById('seatTop'), topP, view.mode === 'team' ? myTeamClass : '', allyTag);
         // 自己已在道具左侧完整展示，桌面底位不再重复
         paintSlot(document.getElementById('seatBottom'), null, '', '');
-        paintSlot(document.getElementById('seatLeft'), leftP, view.mode === 'team' ? foeTeamClass : '', foeTagL, 'left');
-        paintSlot(document.getElementById('seatRight'), rightP, view.mode === 'team' ? foeTeamClass : '', foeTagR, 'right');
+        paintSlot(document.getElementById('seatLeft'), leftP, view.mode === 'team' ? foeTeamClass : '', foeTagL);
+        paintSlot(document.getElementById('seatRight'), rightP, view.mode === 'team' ? foeTeamClass : '', foeTagR);
 
         document.getElementById('opponents').innerHTML = '';
-        document.getElementById('mySeat').innerHTML = seatHtml(me, 'left');
+        document.getElementById('mySeat').innerHTML = seatHtml(me);
         bindSeats(document.getElementById('mySeat'));
       } else {
         ['seatTop', 'seatBottom', 'seatLeft', 'seatRight'].forEach((id) => {
@@ -1858,8 +1829,8 @@
           el.dataset.tag = '';
         });
         const others = view.players.filter((p) => p.actorNr !== myActorNr);
-        document.getElementById('opponents').innerHTML = others.map((p) => seatHtml(p, 'right')).join('');
-        if (me) document.getElementById('mySeat').innerHTML = seatHtml(me, 'left');
+        document.getElementById('opponents').innerHTML = others.map((p) => seatHtml(p)).join('');
+        if (me) document.getElementById('mySeat').innerHTML = seatHtml(me);
         bindSeats(document.getElementById('opponents'));
         bindSeats(document.getElementById('mySeat'));
       }
@@ -1893,10 +1864,8 @@
       if (view.me && view.me.lastPeek) {
         peeks.push(`检视：第 ${view.me.lastPeek.index + 1} 发 = ${bulletLabel(view.me.lastPeek.bullet)}`);
       }
-      if (view.me && view.me.peekedBottom) {
-        peeks.push(`火药底部：${view.me.peekedBottom.map(bulletLabel).join('、')}`);
-      }
       document.getElementById('privateInfo').textContent = peeks.join(' ｜ ');
+      renderGunpowderDock(view);
 
       const othersAlive = view.players.filter((p) => p.alive && p.actorNr !== myActorNr);
       if (selectedTarget && !othersAlive.some((p) => p.actorNr === selectedTarget)) {
@@ -1942,13 +1911,6 @@
         awaitBar.style.display = mine ? 'none' : 'inline-flex';
         document.getElementById('awaitHint').textContent =
           `${view.awaiting.name || '#' + view.awaiting.actorNr} 正在选择弃牌…${secText}`;
-      } else if (view.awaiting && view.awaiting.type === 'gunpowder_peek') {
-        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
-        const sec = awaitingLeftSec(view.awaiting);
-        const secText = sec != null ? ` ${sec}s` : '';
-        awaitBar.style.display = mine ? 'none' : 'inline-flex';
-        document.getElementById('awaitHint').textContent =
-          `${view.awaiting.name || '#' + view.awaiting.actorNr}（火药）抉择中…${secText}`;
       } else if (view.awaiting && view.awaiting.type === 'snake_cast') {
         const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
         const sec = awaitingLeftSec(view.awaiting);
@@ -2354,7 +2316,9 @@
         const art = role.art
           ? `<img src="${role.art}" alt="${role.name}" draggable="false">`
           : `<span class="glyph">${role.glyph}</span>`;
-        const name = isMe ? `你 · #${p.actorNr}` : `${p.name} · #${p.actorNr}`;
+        const name = isMe
+          ? `你 · <span class="seat-nr">#${p.actorNr}</span>`
+          : `${p.name} · <span class="seat-nr">#${p.actorNr}</span>`;
         const meta = `${role.name}${p.alive ? '' : ' · 出局'}${p.team != null && view.mode === 'team' ? (p.team === 0 ? ' · 红' : ' · 蓝') : ''}`;
         return `<button type="button" class="player-pick-card" data-actor="${p.actorNr}" ${can ? '' : 'disabled'}>
           <div class="pick-art">${art}</div>
@@ -2584,34 +2548,24 @@
       closeDiscardHand();
     };
 
-    function maybeShowGunpowder() {
-      const overlay = document.getElementById('gunpowderOverlay');
-      const awaiting = view && view.awaiting;
-      if (!awaiting || awaiting.type !== 'gunpowder_peek') {
-        overlay.classList.remove('show');
+    function renderGunpowderDock(v) {
+      const dock = document.getElementById('gunpowderDock');
+      const shellsEl = document.getElementById('gunpowderDockShells');
+      if (!dock || !shellsEl) return;
+      const bottom = v && v.me && v.me.gunpowderBottom;
+      if (!bottom || !bottom.length) {
+        dock.hidden = true;
+        shellsEl.innerHTML = '';
         return;
       }
-      const mine = Number(awaiting.actorNr) === Number(myActorNr);
-      const token = awaiting.token || `gp-${awaiting.actorNr}`;
-      if (token === lastGunpowderToken && overlay.classList.contains('show')) {
-        document.getElementById('gunpowderActions').style.display = mine ? '' : 'none';
-        return;
-      }
-      lastGunpowderToken = token;
-      const sec = awaitingLeftSec(awaiting) ?? awaiting.seconds ?? 30;
-      document.getElementById('gunpowderSub').textContent = mine
-        ? `可查看弹药堆底部 ${awaiting.magBottomCount || 2} 张（仅你可见），也可跳过（剩余 ${sec}s）`
-        : `${awaiting.name || '#' + awaiting.actorNr}（火药）正在抉择是否查看底部弹药…剩余 ${sec}s`;
-      document.getElementById('gunpowderActions').style.display = mine ? '' : 'none';
-      overlay.classList.add('show');
+      dock.hidden = false;
+      shellsEl.innerHTML = bottom.map((b, i) => {
+        const cls = b === 'live' ? 'live' : b === 'blank' ? 'blank' : 'special';
+        const mark = b === 'live' ? '实' : b === 'blank' ? '空' : '特';
+        const ord = i === 0 ? '最底' : '次底';
+        return `<div class="gunpowder-dock-item"><span class="shell ${cls}"><span>${mark}</span></span><span class="gunpowder-dock-ord">${ord}</span><span class="gunpowder-dock-name">${bulletLabel(b)}</span></div>`;
+      }).join('');
     }
-
-    document.getElementById('gunpowderSkip').onclick = () => {
-      sendAction({ type: 'gunpowder_peek', accept: false });
-    };
-    document.getElementById('gunpowderPeek').onclick = () => {
-      sendAction({ type: 'gunpowder_peek', accept: true });
-    };
 
     function armAwaitingWatchdog() {
       if (awaitingWatchdog) {
@@ -2630,7 +2584,6 @@
       };
       const interactiveTypes = {
         discard_hand: true,
-        gunpowder_peek: true,
         double_barrel: true,
         snake_cast: true
       };
@@ -2671,14 +2624,6 @@
           const hand = (view.me && view.me.hand) || [];
           sub.textContent = `手牌 ${hand.length} 张，请弃置 ${a.need} 张至上限 8 张（剩余 ${sec}s）`;
         }
-      } else if (a.type === 'gunpowder_peek') {
-        const sub = document.getElementById('gunpowderSub');
-        if (sub && document.getElementById('gunpowderOverlay').classList.contains('show')) {
-          const mine = Number(a.actorNr) === Number(myActorNr);
-          sub.textContent = mine
-            ? `可查看弹药堆底部 ${a.magBottomCount || 2} 张（仅你可见），也可跳过（剩余 ${sec}s）`
-            : `${a.name || '#' + a.actorNr}（火药）正在抉择…剩余 ${sec}s`;
-        }
       } else if (a.type === 'double_barrel') {
         const sub = document.getElementById('dbDeclareSub');
         if (sub && document.getElementById('dbDeclareOverlay').classList.contains('show')) {
@@ -2688,8 +2633,6 @@
             ? `当前转轮 ${count} 发 · 点选一发并声明实弹/空弹，也可跳过（剩余 ${sec}s）`
             : `${a.name || '#' + a.actorNr}（双管）正在选择声明…剩余 ${sec}s`;
         }
-      } else if (a.type === 'snake_cast') {
-        // 状态条倒计时已在 render 中刷新；此处刷新 awaitHint
       }
       const awaitHint = document.getElementById('awaitHint');
       const awaitBar = document.getElementById('awaitBar');
@@ -2698,8 +2641,6 @@
           awaitHint.textContent = `${a.name || '#' + a.actorNr}（双管）正在声明… ${sec}s`;
         } else if (a.type === 'discard_hand') {
           awaitHint.textContent = `${a.name || '#' + a.actorNr} 正在选择弃牌… ${sec}s`;
-        } else if (a.type === 'gunpowder_peek') {
-          awaitHint.textContent = `${a.name || '#' + a.actorNr}（火药）抉择中… ${sec}s`;
         } else if (a.type === 'snake_cast') {
           awaitHint.textContent =
             `${a.name || '#' + a.actorNr} 正为复制的【${a.itemName || '道具'}】选择目标… ${sec}s`;
@@ -2710,7 +2651,7 @@
     function armInteractiveCountdown() {
       clearInteractiveCountdown();
       const a = view && view.awaiting;
-      const types = { discard_hand: 1, gunpowder_peek: 1, double_barrel: 1, snake_cast: 1 };
+      const types = { discard_hand: 1, double_barrel: 1, snake_cast: 1 };
       if (!a || !types[a.type] || !a.expiresAt) return;
       const token = a.token;
       refreshInteractiveCountdownUi();
