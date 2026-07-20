@@ -859,7 +859,7 @@ function beginRattlesnakeWindow(state) {
       expiresAt: Date.now() + RATTLESNAKE_WINDOW_MS,
       token: `snake-${state.round}-${nr}-${Date.now()}`
     };
-    logState(state, `${p.name}（响尾蛇）可复制【${itemName}】：扣 1 血，限时 ${state.awaiting.seconds} 秒。`);
+    logState(state, `${p.name}（响尾蛇）可将【${itemName}】复制到手牌：扣 1 血，限时 ${state.awaiting.seconds} 秒。`);
     return;
   }
   state.awaiting = null;
@@ -888,44 +888,25 @@ function rattlesnakeCopy(state, actorNr) {
   if (state.rattlesnakeUsedThisRound[actorNr]) return { ok: false, reason: '本轮已复制过' };
   if (!state.lastItemForSnake) return { ok: false, reason: '没有可复制的道具' };
   if (p.hp < 1) return { ok: false, reason: '血量不足' };
-  p.hp -= 1;
-  state.rattlesnakeUsedThisRound[actorNr] = true;
+
   const itemId = state.lastItemForSnake.itemId;
   const itemName = ITEMS[itemId] ? ITEMS[itemId].name : itemId;
-  logState(state, `${p.name}（响尾蛇）消耗 1 血复制【${itemName}】。`);
-  clearRattlesnakeOpportunity(state);
+  p.hp -= 1;
+  state.rattlesnakeUsedThisRound[actorNr] = true;
+  state.awaiting = null;
 
   if (p.hp <= 0) {
     p.alive = false;
-    logState(state, `${p.name} 出局！`);
+    logState(state, `${p.name}（响尾蛇）消耗 1 血复制【${itemName}】后出局！`);
     checkWin(state);
+    beginRattlesnakeWindow(state);
     return { ok: true };
   }
 
-  // 复制的是卡牌效果：需自行选择目标/位置，不复用原玩家索引
-  if (itemNeedsSnakeCast(itemId)) {
-    state.awaiting = stampAwaitingExpiry(
-      {
-        type: 'snake_cast',
-        actorNr: p.actorNr,
-        name: p.name,
-        itemId,
-        itemName,
-        token: `snakecast-${state.round}-${p.actorNr}-${Date.now()}`
-      },
-      'snake_cast'
-    );
-    logState(state, `${p.name} 请为复制的【${itemName}】自行选择目标/位置（限时 ${state.awaiting.seconds} 秒）。`);
-    return { ok: true };
-  }
-
-  const bad = validateItemUse(state, p, itemId, {});
-  if (bad) {
-    logState(state, `${p.name} 复制【${itemName}】未能生效：${bad}`);
-  } else {
-    applyItemEffect(state, p, itemId, { _noSnakeOffer: true });
-  }
-  if (!state.awaiting) tryStartHandDiscard(state);
+  p.hand.push(itemId);
+  logState(state, `${p.name}（响尾蛇）消耗 1 血，将【${itemName}】复制到手牌。`);
+  queueHandDiscardIfNeeded(state, p);
+  beginRattlesnakeWindow(state);
   return { ok: true };
 }
 
@@ -1034,7 +1015,6 @@ function startItemFx(state, player, itemId, payload, visual) {
         itemId,
         itemName: meta.name || itemId,
         itemArt: meta.art || null,
-        itemGlyph: meta.glyph || '✦',
         actorNr: player.actorNr,
         name: player.name,
         token: `fx-${itemId}-${state.round}-${Date.now()}`,
@@ -1294,7 +1274,6 @@ function useIronRose(state, actorNr, handIndexes) {
       itemId: 'iron_rose',
       itemName: '铁玫瑰',
       itemArt: role.art || null,
-      itemGlyph: role.glyph || '薔',
       actorNr: p.actorNr,
       name: p.name,
       token: `fx-iron_rose-${state.round}-${Date.now()}`,

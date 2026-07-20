@@ -31,7 +31,7 @@ body (100dvh, flex column, overflow hidden)
 | `.board-arena` | 唯一用 `minmax(0, 1fr)` / `flex: 1` **吸收剩余高度**；内容再多也优先压缩牌桌，而不是裁切底部。 |
 | `.bottom-panel` | **禁止**用过小的 `max-height` 把内部压扁；高度由「自己座位 + 完整手牌 + 工具栏」决定。 |
 | `.me-zone` | `flex: 0 0 auto`，`min-height` 不得为 `0` 导致被压缩；`overflow: visible`。 |
-| `.hand-fan` | 静止态高度 ≥ 道具牌高度；**禁止**用大额负 `margin-top` 把牌推到视口外。悬停放大靠 `transform` + 高层 `z-index` 盖到牌桌上。 |
+| `.hand-fan` | 静止态高度 ≥ 道具牌高度；**禁止**用大额负 `margin-top` 把牌推到视口外。悬停放大靠固定尺寸的 `.hand-slot` 命中 + 内层 `.item-card` 的 `transform`（勿在牌本身上用 `:hover` 改 margin，否则会闪烁）。 |
 | `.actions-dock` | 始终 `flex: 0 0 auto`，完整可见。 |
 | 悬停放大 | 手牌：`transform-origin: center bottom`，向上 `translateY` + `scale(≥2.7)`；`.bottom-panel` 的 `z-index` 高于 `.board-arena`。角色牌可有独立悬停放大，同样不得裁切工具栏。 |
 | 四座位「开枪」 | 顶座位可在牌下；左右座位必须横排在角色牌靠毡桌一侧（勿牌下竖排），总高度≈角色牌，避免压到底栏分界线以下。自己座位「开枪」在角色牌右侧。 |

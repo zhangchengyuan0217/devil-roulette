@@ -39,7 +39,7 @@ const ROLES = {
   rattlesnake: {
     id: 'rattlesnake', name: '响尾蛇', glyph: '蛇', hue: 145,
     art: 'assets/roles/rattlesnake.jpg',
-    tag: '复制', desc: '当有一位玩家使用道具时，你可以消耗一点血量复制该道具效果。（一轮限一次）'
+    tag: '复制', desc: '当有一位玩家使用道具时，你可以消耗一点血量将该道具卡复制到自己手中。（一轮限一次）'
   }
 };
 

@@ -598,9 +598,29 @@ button.primary {
   pointer-events: none;
 }
 
-.hand-fan .item-card,
+.hand-fan .hand-slot,
 .hand-fan .meta {
   pointer-events: auto;
+}
+
+/* 稳定命中区：外层不变形，避免悬停放大时指针脱出导致闪烁 */
+.hand-slot {
+  position: relative;
+  flex: 0 0 auto;
+  width: 74px;
+  height: 120px;
+  margin: 0;
+  z-index: 1;
+  cursor: pointer;
+}
+
+.hand-slot:hover,
+.hand-slot:focus-within {
+  z-index: 80;
+}
+
+.hand-slot.is-selected {
+  z-index: 70;
 }
 
 .private-toast {
@@ -737,6 +757,10 @@ button.primary {
   }
   .item-card {
     width: 78px;
+    height: 110px;
+  }
+  .hand-slot {
+    width: 66px;
     height: 110px;
   }
   .hand-fan {
@@ -1093,16 +1117,18 @@ button.primary {
 .item-card {
   width: 86px;
   height: 120px;
-  margin: 0 -6px;
+  margin: 0;
   border-radius: 8px;
   border: 2px solid rgba(255,255,255,0.18);
   background: #1c1510;
   box-shadow: 0 6px 12px rgba(0,0,0,0.4);
   cursor: pointer;
-  transition: transform 0.16s ease, margin 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, z-index 0s;
-  position: relative;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 0;
   overflow: hidden;
-  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1110,6 +1136,8 @@ button.primary {
   transform-origin: center bottom;
   user-select: none;
   -webkit-user-select: none;
+  /* 命中交给固定尺寸的 .hand-slot，避免放大后指针脱出闪烁 */
+  pointer-events: none;
 }
 
 .item-card.has-art {
@@ -1126,29 +1154,20 @@ button.primary {
   pointer-events: none;
 }
 
-/* 未选中：悬停向上放大预览 */
-.item-card:not(.selected):hover {
+/* 未选中：槽位悬停时向上放大（槽位本身不变形） */
+.hand-slot:not(.is-selected):hover .item-card,
+.hand-slot:not(.is-selected):focus-within .item-card {
   transform: translateY(-72px) scale(var(--hand-hover-scale, 2.7));
-  z-index: 80;
-  margin: 0 28px;
   box-shadow: 0 32px 60px rgba(0,0,0,0.75);
   border-color: rgba(255,255,255,0.6);
 }
 
-/* 选中：上移固定，悬停不再放大跳动 */
+/* 选中：上移固定，悬停不再放大 */
+.hand-slot.is-selected .item-card,
 .item-card.selected {
   transform: translateY(-36px);
-  z-index: 70;
-  margin: 0 4px;
   box-shadow: 0 0 0 2px var(--gold), 0 12px 22px rgba(0,0,0,0.5);
   border-color: var(--gold);
-}
-
-.item-card.selected:hover {
-  transform: translateY(-36px);
-  z-index: 72;
-  margin: 0 4px;
-  box-shadow: 0 0 0 2px var(--gold), 0 14px 26px rgba(0,0,0,0.55);
 }
 
 .item-card .art-glyph {
@@ -1754,11 +1773,6 @@ button.primary {
   color: #fff;
 }
 
-.fx-used-glyph {
-  font-size: 2rem;
-  font-weight: 700;
-}
-
 .fx-cast-arrow {
   font-size: 1.8rem;
   color: var(--gold);
@@ -1823,14 +1837,18 @@ button.primary {
 }
 
 .fx-icon {
-  width: 110px;
-  height: 110px;
+  min-width: 110px;
+  min-height: 72px;
+  padding: 14px 18px;
   border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.2rem;
+  font-size: 1.15rem;
   font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.25;
   color: #fff;
   border: 2px solid rgba(255,255,255,0.2);
   background: linear-gradient(155deg, #4a3428, #1a120e);
@@ -1843,9 +1861,9 @@ button.primary {
   box-shadow: 0 0 0 3px rgba(212,84,74,0.4), 0 16px 36px rgba(212,84,74,0.25);
 }
 
-.fx-draw { color: #e8c57a; font-size: 2.6rem; }
+.fx-draw { color: #e8c57a; font-size: 2rem; }
 .fx-shotgun { color: #ffb08a; }
-.fx-reverse { font-size: 1.4rem; letter-spacing: 0.08em; color: #7ec8e3; }
+.fx-reverse { font-size: 1.2rem; letter-spacing: 0.08em; color: #7ec8e3; }
 .fx-bind { color: #c5b79a; }
 .fx-link { color: #e8a0d0; }
 .fx-unlink { color: #b9a794; }
@@ -1875,17 +1893,13 @@ button.primary {
 
 .fx-mini-card.fallback {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  color: #fff;
-  font-size: 1.6rem;
-}
-
-.fx-mini-card.fallback span {
-  font-size: 0.75rem;
+  padding: 8px;
   color: var(--gold);
+  font-size: 0.78rem;
+  text-align: center;
+  font-weight: 700;
 }
 
 /* —— 换弹点选弹窗 —— */

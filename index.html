@@ -87,7 +87,7 @@
         <button id="ironRoseBtn" type="button" disabled style="display:none">铁玫瑰</button>
         <span id="snakeBar" style="display:none;align-items:center;gap:8px">
           <span class="meta" id="snakeHint"></span>
-          <button id="snakeBtn" class="primary" type="button">复制（-1血）</button>
+          <button id="snakeBtn" class="primary" type="button">复制到手牌（-1血）</button>
           <button id="snakePassBtn" type="button">放弃</button>
         </span>
         <span id="awaitBar" style="display:none;align-items:center;gap:8px">
@@ -379,7 +379,7 @@
         const name = view.awaiting.itemName || '道具';
         const mine = view.awaiting.actorNr === myActorNr;
         hint.textContent = mine
-          ? `响尾蛇：复制【${name}】？ 剩余 ${sec}s`
+          ? `响尾蛇：将【${name}】复制到手牌？ 剩余 ${sec}s`
           : `响尾蛇 #${view.awaiting.actorNr} 抉择中：【${name}】 ${sec}s`;
       };
       updateHint();
@@ -464,30 +464,7 @@
         return;
       }
 
-      // 响尾蛇复制后自行施放（机器人）
-      if (gameState.awaiting && gameState.awaiting.type === 'snake_cast') {
-        const a = gameState.awaiting;
-        if (a.actorNr === myActorNr) return;
-        const bot = gameState.players.find((p) => p.actorNr === a.actorNr);
-        const payload = {};
-        if (a.itemId === 'bind') {
-          const foes = gameState.players.filter((p) => p.alive && p.actorNr !== a.actorNr);
-          if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
-        } else if (a.itemId === 'double_arrow') {
-          const alive = gameState.players.filter((p) => p.alive);
-          payload.targets = alive.slice(0, Math.min(2, alive.length)).map((p) => p.actorNr);
-        } else if (a.itemId === 'inspect') {
-          payload.index = 0;
-        } else if (a.itemId === 'swap' && gameState.magazine.length >= 2) {
-          payload.i = 0;
-          payload.j = 1;
-        }
-        handleAction(gameState, a.actorNr, { type: 'rattlesnake_cast', payload });
-        refreshLocalView();
-        return;
-      }
-
-      // 响尾蛇窗口（机器人）
+      // 响尾蛇窗口（机器人）：复制到手牌，不再施放效果
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
         const a = gameState.awaiting;
         if (a.actorNr === myActorNr) return;
@@ -496,6 +473,15 @@
         handleAction(gameState, a.actorNr, {
           type: willCopy ? 'rattlesnake_copy' : 'rattlesnake_pass'
         });
+        refreshLocalView();
+        return;
+      }
+
+      // 兼容旧版 snake_cast（现已改为复制到手牌，正常对局不应再出现）
+      if (gameState.awaiting && gameState.awaiting.type === 'snake_cast') {
+        const a = gameState.awaiting;
+        if (a.actorNr === myActorNr) return;
+        handleAction(gameState, a.actorNr, { type: 'rattlesnake_cast', payload: {} });
         refreshLocalView();
         return;
       }
@@ -1040,7 +1026,7 @@
       const art = awaiting.itemArt || meta.art;
       castEl.innerHTML = `
         <div class="fx-announce">
-          ${fxCardHtml(art, awaiting.itemName || meta.name, meta.glyph)}
+          ${fxCardHtml(art, awaiting.itemName || meta.name)}
           <div class="fx-cast-arrow">➜</div>
           ${fxTargetChip(awaiting.targetName || who, awaiting.targetActorNr || awaiting.actorNr)}
         </div>
@@ -1127,7 +1113,7 @@
       const art = awaiting.itemArt || meta.art;
       castEl.innerHTML = `
         <div class="fx-announce">
-          ${fxCardHtml(art, awaiting.itemName || meta.name, meta.glyph)}
+          ${fxCardHtml(art, awaiting.itemName || meta.name)}
         </div>
       `;
 
@@ -1164,11 +1150,19 @@
       sendAction({ type: 'item_fx_done' });
     }
 
-    function fxCardHtml(art, name, glyph) {
+    function fxCardHtml(art, name) {
       if (art) {
         return `<div class="fx-used-card"><img src="${art}" alt="${name || ''}"><span class="fx-used-name">${name || ''}</span></div>`;
       }
-      return `<div class="fx-used-card fallback"><span class="fx-used-glyph">${glyph || '✦'}</span><span class="fx-used-name">${name || '道具'}</span></div>`;
+      return `<div class="fx-used-card fallback"><span class="fx-used-name">${name || '道具'}</span></div>`;
+    }
+
+    function fxMiniCardHtml(itemId) {
+      const it = itemMeta(itemId);
+      if (it.art) {
+        return `<div class="fx-mini-card"><img src="${it.art}" alt="${it.name}"></div>`;
+      }
+      return `<div class="fx-mini-card fallback"><span>${it.name || '道具'}</span></div>`;
     }
 
     function fxTargetChip(name, actorNr) {
@@ -1242,7 +1236,6 @@
       const targets = fxPublicTargets(awaiting);
       const meta = itemMeta(awaiting.itemId);
       const art = awaiting.itemArt || meta.art;
-      const glyph = awaiting.itemGlyph || meta.glyph;
 
       title.textContent = `【${itemName}】`;
       sub.textContent = mine
@@ -1251,7 +1244,7 @@
       result.textContent = '';
       cast.innerHTML = `
         <div class="fx-announce">
-          ${fxCardHtml(art, itemName, glyph)}
+          ${fxCardHtml(art, itemName)}
           ${targets.length ? `<div class="fx-cast-arrow">➜</div><div class="fx-target-row">${targets.map((t) => fxTargetChip(t.name, t.actorNr)).join('')}</div>` : ''}
         </div>
       `;
@@ -1267,17 +1260,12 @@
           stageHtml = `<div class="fx-icon fx-draw">＋2</div>`;
           resultText = `${who} 抽取了 2 张道具（仅本人可见抽到的牌）`;
         } else {
-          const cards = (awaiting.drawn || []).map((cid) => {
-            const it = itemMeta(cid);
-            return it.art
-              ? `<div class="fx-mini-card"><img src="${it.art}" alt="${it.name}"></div>`
-              : `<div class="fx-mini-card fallback">${it.glyph}<span>${it.name}</span></div>`;
-          }).join('');
+          const cards = (awaiting.drawn || []).map((cid) => fxMiniCardHtml(cid)).join('');
           stageHtml = `<div class="fx-card-row">${cards || '<div class="fx-icon fx-draw">＋2</div>'}</div>`;
           resultText = `抽到 ${(awaiting.drawn || []).map((cid) => itemMeta(cid).name).join('、') || '道具'}`;
         }
       } else if (id === 'bandage') {
-        stageHtml = `<div class="fx-icon fx-heal">♥</div>`;
+        stageHtml = `<div class="fx-icon fx-heal">+1 HP</div>`;
         resultText = `${awaiting.targetName || who} 回复 1 点血量`;
       } else if (id === 'inspect' || id === 'peek_top') {
         const pos = (awaiting.peekIndex || 0) + 1;
@@ -1296,7 +1284,7 @@
             : `第 ${pos} 发是【${bulletLabel(b)}】`;
         }
       } else if (id === 'shotgun') {
-        stageHtml = `<div class="fx-icon fx-shotgun">霰</div>`;
+        stageHtml = `<div class="fx-icon fx-shotgun">伤害 ×2</div>`;
         resultText = '下一发实弹伤害 ×2（全员可见）';
       } else if (id === 'swap') {
         stageHtml = `<div class="fx-swap"><span class="fx-shell unknown"><span>${awaiting.swapFrom || '?'}</span></span><span class="fx-swap-arrow">⇄</span><span class="fx-shell unknown"><span>${awaiting.swapTo || '?'}</span></span></div>`;
@@ -1305,27 +1293,22 @@
         stageHtml = `<div class="fx-icon fx-reverse">实 ⇄ 空</div>`;
         resultText = '下一发实弹与空弹互换（全员可见）';
       } else if (id === 'bind') {
-        stageHtml = `<div class="fx-icon fx-bind">捆</div>`;
+        stageHtml = `<div class="fx-icon fx-bind">跳过下回合</div>`;
         resultText = `${who} → ${awaiting.targetName || '目标'}：下一回合无法行动`;
       } else if (id === 'iron_rose') {
-        const cards = (awaiting.discarded || []).map((cid) => {
-          const it = itemMeta(cid);
-          return it.art
-            ? `<div class="fx-mini-card"><img src="${it.art}" alt="${it.name}"></div>`
-            : `<div class="fx-mini-card fallback">${it.glyph}<span>${it.name}</span></div>`;
-        }).join('');
-        stageHtml = `<div class="fx-card-row">${cards || '<div class="fx-icon fx-heal">薔</div>'}</div>`;
+        const cards = (awaiting.discarded || []).map((cid) => fxMiniCardHtml(cid)).join('');
+        stageHtml = `<div class="fx-card-row">${cards || '<div class="fx-icon fx-heal">+1 HP</div>'}</div>`;
         resultText = `弃置道具，${(awaiting.healNames || [who]).join('、')} 各回复 1 点血量`;
       } else if (id === 'double_arrow') {
         if (awaiting.unlock) {
-          stageHtml = `<div class="fx-icon fx-unlink">解</div>`;
+          stageHtml = `<div class="fx-icon fx-unlink">解除连锁</div>`;
           resultText = `${who} 解除了连锁`;
         } else {
-          stageHtml = `<div class="fx-icon fx-link">雕</div>`;
+          stageHtml = `<div class="fx-icon fx-link">建立连锁</div>`;
           resultText = `${who} 连锁 → ${(awaiting.linkNames || []).join('、') || '无'}`;
         }
       } else {
-        stageHtml = `<div class="fx-icon">✦</div>`;
+        stageHtml = art ? fxCardHtml(art, itemName) : `<div class="fx-icon">效果发动</div>`;
         resultText = `${who} 使用了【${itemName}】`;
       }
 
@@ -1701,7 +1684,7 @@
       ).join('');
       document.getElementById('feltStatus').textContent =
         view.awaiting && view.awaiting.type === 'rattlesnake'
-          ? `响尾蛇抉择中：是否复制【${view.awaiting.itemName || '道具'}】…`
+          ? `响尾蛇抉择中：是否将【${view.awaiting.itemName || '道具'}】复制到手牌…`
           : view.magazineCount
             ? `转轮剩余 ${view.magazineCount} 发（背面朝上）`
             : '本轮弹药已打空';
@@ -1849,18 +1832,19 @@
       }
       handEl.innerHTML = myHand.map((id, i) => {
         const it = itemMeta(id);
-        if (it.art) {
-          return `<div class="item-card has-art ${selectedHand.includes(i) ? 'selected' : ''}" data-i="${i}" title="${it.name}">
+        const selected = selectedHand.includes(i);
+        const cardInner = it.art
+          ? `<div class="item-card has-art ${selected ? 'selected' : ''}" title="${it.name}">
             <img class="art-img" src="${it.art}" alt="${it.name}" draggable="false">
+          </div>`
+          : `<div class="item-card ${selected ? 'selected' : ''}" style="--hue:${it.hue}" title="${it.name}">
+            <span class="art-glyph">${it.glyph}</span>
+            <span class="fallback-name">${it.name}</span>
           </div>`;
-        }
-        return `<div class="item-card ${selectedHand.includes(i) ? 'selected' : ''}" data-i="${i}" style="--hue:${it.hue}" title="${it.name}">
-          <span class="art-glyph">${it.glyph}</span>
-          <span class="fallback-name">${it.name}</span>
-        </div>`;
+        return `<div class="hand-slot ${selected ? 'is-selected' : ''}" data-i="${i}" title="${it.name}">${cardInner}</div>`;
       }).join('') || '<span class="meta">手牌为空</span>';
 
-      handEl.querySelectorAll('.item-card').forEach((el) => {
+      handEl.querySelectorAll('.hand-slot').forEach((el) => {
         el.onclick = () => {
           const i = Number(el.dataset.i);
           const pos = selectedHand.indexOf(i);
