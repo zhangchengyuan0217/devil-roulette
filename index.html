@@ -162,13 +162,47 @@
 
   <div class="ammo-pick-overlay" id="swapPickOverlay">
     <div class="ammo-pick-panel">
-      <div class="ammo-pick-title">换弹</div>
+      <div class="ammo-pick-title" id="ammoPickTitle">换弹</div>
       <div class="ammo-pick-sub" id="swapPickSub">点选两发弹药进行交换（第 1 发为下一发）</div>
       <div class="ammo-pick-row" id="swapPickRow"></div>
       <div class="ammo-pick-hint" id="swapPickHint">已选 0 / 2</div>
       <div class="ammo-pick-actions">
         <button type="button" id="swapPickCancel">取消</button>
         <button type="button" class="primary" id="swapPickConfirm" disabled>交换</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ammo-pick-overlay" id="discardHandOverlay">
+    <div class="ammo-pick-panel" style="width:min(640px,100%)">
+      <div class="ammo-pick-title">手牌超限</div>
+      <div class="ammo-pick-sub" id="discardHandSub">请选择要弃置的道具</div>
+      <div class="discard-hand-row" id="discardHandRow"></div>
+      <div class="ammo-pick-hint" id="discardHandHint">已选 0</div>
+      <div class="ammo-pick-actions">
+        <button type="button" class="primary" id="discardHandConfirm" disabled>确认弃置</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ammo-pick-overlay" id="gunpowderOverlay">
+    <div class="ammo-pick-panel">
+      <div class="ammo-pick-title">火药</div>
+      <div class="ammo-pick-sub" id="gunpowderSub">回合开始：可查看弹药堆底部两张</div>
+      <div class="ammo-pick-actions" id="gunpowderActions">
+        <button type="button" id="gunpowderSkip">跳过</button>
+        <button type="button" class="primary" id="gunpowderPeek">查看底部</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ammo-pick-overlay" id="shootConfirmOverlay">
+    <div class="ammo-pick-panel">
+      <div class="ammo-pick-title">确认开枪</div>
+      <div class="ammo-pick-sub" id="shootConfirmSub"></div>
+      <div class="ammo-pick-actions">
+        <button type="button" id="shootConfirmCancel">取消</button>
+        <button type="button" class="primary" id="shootConfirmOk">开枪</button>
       </div>
     </div>
   </div>
@@ -198,6 +232,7 @@
       </div>
       <div class="ammo-pick-hint" id="dbDeclareHint">请选择发数与类型</div>
       <div class="ammo-pick-actions" id="dbDeclareActions">
+        <button type="button" id="dbDeclareSkip">不声明</button>
         <button type="button" class="primary" id="dbDeclareConfirm" disabled>确认声明</button>
       </div>
     </div>
@@ -260,9 +295,15 @@
     let snakeTimer = null;
     let snakeTimerToken = '';
     let snakeCountdownTimer = null;
-    let swapPickPending = null; // { itemIndex }
+    let swapPickPending = null; // { itemIndex, mode: 'swap'|'inspect' }
     let swapPickSelected = [];
-    let playerPickState = null; // { min, max, selected, onConfirm, onExtra, ... }
+    let playerPickState = null;
+    let discardHandSelected = [];
+    let lastDiscardToken = '';
+    let lastGunpowderToken = '';
+    let lastSnakeCastToken = '';
+    let awaitingWatchdog = null;
+    let interactiveCountdownTimer = null;
     let dbDeclareIndex = null;
     let dbDeclareKind = null;
     let lastDbDeclareToken = '';
@@ -370,6 +411,21 @@
       if (gameState.awaiting && gameState.awaiting.type === 'eject_anim') return;
       if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel_reveal') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'discard_hand') {
+        if (gameState.awaiting.actorNr === myActorNr) return;
+        botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 700);
+        return;
+      }
+      if (gameState.awaiting && gameState.awaiting.type === 'gunpowder_peek') {
+        if (gameState.awaiting.actorNr === myActorNr) return;
+        botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 700);
+        return;
+      }
+      if (gameState.awaiting && gameState.awaiting.type === 'snake_cast') {
+        if (gameState.awaiting.actorNr === myActorNr) return;
+        botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 800);
+        return;
+      }
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
         if (gameState.awaiting.actorNr === myActorNr) return; // 本人手动抉择
         botTimer = setTimeout(() => {
@@ -406,6 +462,54 @@
       if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel_reveal') return;
 
+      // 手牌超限弃牌（机器人）
+      if (gameState.awaiting && gameState.awaiting.type === 'discard_hand') {
+        const a = gameState.awaiting;
+        if (a.actorNr === myActorNr) return;
+        const bot = gameState.players.find((p) => p.actorNr === a.actorNr);
+        if (!bot) return;
+        const idxs = [];
+        for (let i = bot.hand.length - 1; i >= 0 && idxs.length < a.need; i--) idxs.push(i);
+        handleAction(gameState, a.actorNr, { type: 'discard_hand', indexes: idxs });
+        refreshLocalView();
+        return;
+      }
+
+      // 火药抉择（机器人）
+      if (gameState.awaiting && gameState.awaiting.type === 'gunpowder_peek') {
+        const a = gameState.awaiting;
+        if (a.actorNr === myActorNr) return;
+        handleAction(gameState, a.actorNr, {
+          type: 'gunpowder_peek',
+          accept: Math.random() < 0.7
+        });
+        refreshLocalView();
+        return;
+      }
+
+      // 响尾蛇复制后自行施放（机器人）
+      if (gameState.awaiting && gameState.awaiting.type === 'snake_cast') {
+        const a = gameState.awaiting;
+        if (a.actorNr === myActorNr) return;
+        const bot = gameState.players.find((p) => p.actorNr === a.actorNr);
+        const payload = {};
+        if (a.itemId === 'bind') {
+          const foes = gameState.players.filter((p) => p.alive && p.actorNr !== a.actorNr);
+          if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
+        } else if (a.itemId === 'double_arrow') {
+          const alive = gameState.players.filter((p) => p.alive);
+          payload.targets = alive.slice(0, Math.min(2, alive.length)).map((p) => p.actorNr);
+        } else if (a.itemId === 'inspect') {
+          payload.index = 0;
+        } else if (a.itemId === 'swap' && gameState.magazine.length >= 2) {
+          payload.i = 0;
+          payload.j = 1;
+        }
+        handleAction(gameState, a.actorNr, { type: 'rattlesnake_cast', payload });
+        refreshLocalView();
+        return;
+      }
+
       // 响尾蛇窗口（机器人）
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
         const a = gameState.awaiting;
@@ -423,11 +527,15 @@
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel') {
         const a = gameState.awaiting;
         if (a.actorNr === myActorNr) return;
-        handleAction(gameState, a.actorNr, {
-          type: 'double_barrel',
-          index: 1 + Math.floor(Math.random() * a.magSize),
-          kind: Math.random() < 0.5 ? 'live' : 'blank'
-        });
+        if (Math.random() < 0.2) {
+          handleAction(gameState, a.actorNr, { type: 'double_barrel_skip' });
+        } else {
+          handleAction(gameState, a.actorNr, {
+            type: 'double_barrel',
+            index: 1 + Math.floor(Math.random() * a.magSize),
+            kind: Math.random() < 0.5 ? 'live' : 'blank'
+          });
+        }
         refreshLocalView();
         return;
       }
@@ -671,6 +779,11 @@
       maybeShowFirstSpin();
       maybeShowDbDeclare();
       maybeShowDbReveal();
+      maybeShowDiscardHand();
+      maybeShowGunpowder();
+      maybeShowSnakeCast();
+      armAwaitingWatchdog();
+      armInteractiveCountdown();
     }
 
     function joinPreferredRoom(preferRejoin) {
@@ -797,10 +910,14 @@
       maybeShowFirstSpin();
       maybeShowDbDeclare();
       maybeShowDbReveal();
+      maybeShowDiscardHand();
+      maybeShowGunpowder();
+      maybeShowSnakeCast();
+      armAwaitingWatchdog();
+      armInteractiveCountdown();
     };
 
     function finishAmmoDraw() {
-      if (!isHost()) return;
       sendAction({ type: 'ammo_draw_done' });
     }
 
@@ -906,7 +1023,6 @@
     }
 
     function finishPainkillerDice() {
-      if (!isHost()) return;
       sendAction({ type: 'painkiller_dice_done' });
     }
 
@@ -991,7 +1107,6 @@
     }
 
     function finishEjectAnim() {
-      if (!isHost()) return;
       sendAction({ type: 'eject_done' });
     }
 
@@ -1071,7 +1186,6 @@
     }
 
     function finishItemFx() {
-      if (!isHost()) return;
       sendAction({ type: 'item_fx_done' });
     }
 
@@ -1218,6 +1332,15 @@
       } else if (id === 'bind') {
         stageHtml = `<div class="fx-icon fx-bind">捆</div>`;
         resultText = `${who} → ${awaiting.targetName || '目标'}：下一回合无法行动`;
+      } else if (id === 'iron_rose') {
+        const cards = (awaiting.discarded || []).map((cid) => {
+          const it = itemMeta(cid);
+          return it.art
+            ? `<div class="fx-mini-card"><img src="${it.art}" alt="${it.name}"></div>`
+            : `<div class="fx-mini-card fallback">${it.glyph}<span>${it.name}</span></div>`;
+        }).join('');
+        stageHtml = `<div class="fx-card-row">${cards || '<div class="fx-icon fx-heal">薔</div>'}</div>`;
+        resultText = `弃置道具，${(awaiting.healNames || [who]).join('、')} 各回复 1 点血量`;
       } else if (id === 'double_arrow') {
         if (awaiting.unlock) {
           stageHtml = `<div class="fx-icon fx-unlink">解</div>`;
@@ -1251,7 +1374,6 @@
     }
 
     function finishFirstPlayerSpin() {
-      if (!isHost()) return;
       sendAction({ type: 'first_player_done' });
     }
 
@@ -1381,7 +1503,8 @@
       const count = awaiting.magSize || 0;
 
       if (!mine) {
-        sub.textContent = `${awaiting.name || '#' + awaiting.actorNr}（双管）正在选择声明…全员等待中`;
+        const sec = awaitingLeftSec(awaiting) ?? awaiting.seconds ?? 30;
+        sub.textContent = `${awaiting.name || '#' + awaiting.actorNr}（双管）正在选择声明…剩余 ${sec}s`;
         row.innerHTML = Array.from({ length: count }, (_, i) => `
           <div class="ammo-pick-shell" style="cursor:default">
             <span class="shell unknown"></span>
@@ -1399,7 +1522,10 @@
       actions.style.display = '';
       dbDeclareIndex = null;
       dbDeclareKind = null;
-      sub.textContent = `当前转轮 ${count} 发 · 点选一发并声明实弹/空弹（成功则己方下轮双倍道具）`;
+      {
+        const sec = awaitingLeftSec(awaiting) ?? awaiting.seconds ?? 30;
+        sub.textContent = `当前转轮 ${count} 发 · 点选一发并声明实弹/空弹，也可跳过（剩余 ${sec}s）`;
+      }
       row.innerHTML = Array.from({ length: count }, (_, i) => `
         <button type="button" class="ammo-pick-shell" data-index="${i}" aria-label="第 ${i + 1} 发">
           <span class="shell unknown"></span>
@@ -1439,7 +1565,6 @@
     }
 
     function finishDbReveal() {
-      if (!isHost()) return;
       sendAction({ type: 'double_barrel_done' });
     }
 
@@ -1531,6 +1656,11 @@
       closeDbDeclare();
     };
 
+    document.getElementById('dbDeclareSkip').onclick = () => {
+      sendAction({ type: 'double_barrel_skip' });
+      closeDbDeclare();
+    };
+
     function render() {
       const inRoom = !offlineSim && client && client.isJoinedToRoom();
       document.getElementById('roomInfo').textContent = offlineSim
@@ -1602,7 +1732,18 @@
       const pills = [];
       if (view.effects.reverseNext) pills.push('<span class="pill">反转挂起</span>');
       if (view.effects.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
-      if (view.effects.linked.length) pills.push(`<span class="pill">连锁 ${view.effects.linked.join(',')}</span>`);
+      if (view.effects.linkedPairs && view.effects.linkedPairs.length) {
+        const pairText = view.effects.linkedPairs.map((pair) => {
+          const names = pair.map((nr) => {
+            const p = (view.players || []).find((x) => Number(x.actorNr) === Number(nr));
+            return p ? p.name : `#${nr}`;
+          });
+          return names.join('↔');
+        }).join(' · ');
+        pills.push(`<span class="pill">连锁 ${pairText}</span>`);
+      } else if (view.effects.linked && view.effects.linked.length) {
+        pills.push(`<span class="pill">连锁 ${view.effects.linked.join(',')}</span>`);
+      }
       document.getElementById('effectPills').innerHTML = pills.join('');
 
       const me = view.players.find((p) => p.actorNr === myActorNr);
@@ -1788,10 +1929,33 @@
       const awaitBar = document.getElementById('awaitBar');
       if (view.awaiting && view.awaiting.type === 'double_barrel') {
         const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
+        const sec = awaitingLeftSec(view.awaiting);
+        const secText = sec != null ? ` ${sec}s` : '';
         awaitBar.style.display = mine ? 'none' : 'inline-flex';
         document.getElementById('awaitHint').textContent = mine
           ? ''
-          : `${view.awaiting.name || '#' + view.awaiting.actorNr}（双管）正在声明…`;
+          : `${view.awaiting.name || '#' + view.awaiting.actorNr}（双管）正在声明…${secText}`;
+      } else if (view.awaiting && view.awaiting.type === 'discard_hand') {
+        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
+        const sec = awaitingLeftSec(view.awaiting);
+        const secText = sec != null ? ` ${sec}s` : '';
+        awaitBar.style.display = mine ? 'none' : 'inline-flex';
+        document.getElementById('awaitHint').textContent =
+          `${view.awaiting.name || '#' + view.awaiting.actorNr} 正在选择弃牌…${secText}`;
+      } else if (view.awaiting && view.awaiting.type === 'gunpowder_peek') {
+        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
+        const sec = awaitingLeftSec(view.awaiting);
+        const secText = sec != null ? ` ${sec}s` : '';
+        awaitBar.style.display = mine ? 'none' : 'inline-flex';
+        document.getElementById('awaitHint').textContent =
+          `${view.awaiting.name || '#' + view.awaiting.actorNr}（火药）抉择中…${secText}`;
+      } else if (view.awaiting && view.awaiting.type === 'snake_cast') {
+        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
+        const sec = awaitingLeftSec(view.awaiting);
+        const secText = sec != null ? ` ${sec}s` : '';
+        awaitBar.style.display = mine ? 'none' : 'inline-flex';
+        document.getElementById('awaitHint').textContent =
+          `${view.awaiting.name || '#' + view.awaiting.actorNr} 正为复制的【${view.awaiting.itemName || '道具'}】选择目标…${secText}`;
       } else {
         awaitBar.style.display = 'none';
       }
@@ -1993,15 +2157,16 @@
           ? `确认对自己（${playerLabel(myActorNr)}）开枪？`
           : `确认对 ${playerLabel(targetActorNr)} 开枪？`;
         if (nightOwlTargetNr != null) {
-          confirmMsg = `确认对自己开枪？\n（夜枭效果：若打出实弹，你与 ${playerLabel(nightOwlTargetNr)} 将一起扣血）`;
+          confirmMsg = `确认对自己开枪？（夜枭：若打出实弹，你与 ${playerLabel(nightOwlTargetNr)} 将一起扣血）`;
         }
-        if (!confirm(confirmMsg)) return;
-        sendAction({
-          type: 'shoot',
-          targetActorNr: Number(targetActorNr),
-          nightOwlTargetNr
+        openShootConfirm(confirmMsg, () => {
+          sendAction({
+            type: 'shoot',
+            targetActorNr: Number(targetActorNr),
+            nightOwlTargetNr
+          });
+          selectedHand = [];
         });
-        selectedHand = [];
       };
 
       if (toSelf && me && me.role === 'night_owl' && me.hp <= 4) {
@@ -2053,14 +2218,19 @@
       }
 
       if (itemId === 'swap') {
-        openSwapPicker(itemIndex);
+        openAmmoPicker(itemIndex, 'swap');
+        return;
+      }
+
+      if (itemId === 'inspect') {
+        openAmmoPicker(itemIndex, 'inspect');
         return;
       }
 
       if (itemId === 'double_arrow') {
         openPlayerPicker({
           title: '一箭双雕',
-          sub: '选择 1~2 名玩家建立连锁；也可直接解除当前连锁',
+          sub: '选择 1~2 名玩家建立连锁（每人同时仅可与一人连锁；冲突时旧连锁自动解除）；也可直接解除全部连锁',
           players: view.players,
           selectable: (p) => p.alive,
           min: 1,
@@ -2079,12 +2249,26 @@
         return;
       }
 
-      const payload = {};
-      if (itemId === 'inspect') {
-        payload.index = Math.max(0, Number(prompt('查看从上数第几发？', '1')) - 1);
-      }
-      sendAction({ type: 'use_item', itemIndex, payload });
+      sendAction({ type: 'use_item', itemIndex, payload: {} });
       selectedHand = [];
+    };
+
+    function openShootConfirm(message, onOk) {
+      shootConfirmPending = { onOk };
+      document.getElementById('shootConfirmSub').textContent = message;
+      document.getElementById('shootConfirmOverlay').classList.add('show');
+    }
+
+    function closeShootConfirm() {
+      shootConfirmPending = null;
+      document.getElementById('shootConfirmOverlay').classList.remove('show');
+    }
+
+    document.getElementById('shootConfirmCancel').onclick = () => closeShootConfirm();
+    document.getElementById('shootConfirmOk').onclick = () => {
+      const cb = shootConfirmPending && shootConfirmPending.onOk;
+      closeShootConfirm();
+      if (cb) cb();
     };
 
     function closePlayerPicker() {
@@ -2231,33 +2415,48 @@
       document.getElementById('swapPickOverlay').classList.remove('show');
       document.getElementById('swapPickRow').innerHTML = '';
       document.getElementById('swapPickConfirm').disabled = true;
-      document.getElementById('swapPickHint').textContent = '已选 0 / 2';
+      document.getElementById('swapPickHint').textContent = '已选 0';
     }
 
     function refreshSwapPickHint() {
+      if (!swapPickPending) return;
+      const mode = swapPickPending.mode;
       const n = swapPickSelected.length;
+      const need = mode === 'inspect' ? 1 : 2;
       const hint = document.getElementById('swapPickHint');
       const conf = document.getElementById('swapPickConfirm');
-      if (n === 0) hint.textContent = '已选 0 / 2 · 点击两发弹药';
-      else if (n === 1) hint.textContent = `已选第 ${swapPickSelected[0] + 1} 发 · 再点另一发`;
-      else hint.textContent = `交换第 ${swapPickSelected[0] + 1} 发 ↔ 第 ${swapPickSelected[1] + 1} 发`;
-      conf.disabled = n !== 2;
+      if (mode === 'inspect') {
+        hint.textContent = n === 0 ? '请点选一发检视' : `检视第 ${swapPickSelected[0] + 1} 发`;
+      } else if (n === 0) {
+        hint.textContent = '已选 0 / 2 · 点击两发弹药';
+      } else if (n === 1) {
+        hint.textContent = `已选第 ${swapPickSelected[0] + 1} 发 · 再点另一发`;
+      } else {
+        hint.textContent = `交换第 ${swapPickSelected[0] + 1} 发 ↔ 第 ${swapPickSelected[1] + 1} 发`;
+      }
+      conf.disabled = n !== need;
       document.querySelectorAll('#swapPickRow .ammo-pick-shell').forEach((btn) => {
         const idx = Number(btn.dataset.index);
         btn.classList.toggle('picked', swapPickSelected.includes(idx));
       });
     }
 
-    function openSwapPicker(itemIndex) {
-      if (!view || !view.magazineCount || view.magazineCount < 2) {
+    function openAmmoPicker(itemIndex, mode) {
+      if (!view || !view.magazineCount) {
+        alert(mode === 'inspect' ? '弹药堆为空，无法检视' : '弹药不足，无法换弹');
+        return;
+      }
+      if (mode === 'swap' && view.magazineCount < 2) {
         alert('弹药不足两发，无法换弹');
         return;
       }
       closePlayerPicker();
-      swapPickPending = { itemIndex };
+      swapPickPending = { itemIndex, mode };
       swapPickSelected = [];
       const row = document.getElementById('swapPickRow');
       const count = view.magazineCount;
+      document.getElementById('ammoPickTitle').textContent = mode === 'inspect' ? '检视弹巢' : '换弹';
+      document.getElementById('swapPickConfirm').textContent = mode === 'inspect' ? '检视' : '交换';
       row.innerHTML = Array.from({ length: count }, (_, i) => `
         <button type="button" class="ammo-pick-shell" data-index="${i}" aria-label="第 ${i + 1} 发">
           <span class="shell unknown"></span>
@@ -2267,35 +2466,367 @@
       row.querySelectorAll('.ammo-pick-shell').forEach((btn) => {
         btn.onclick = () => {
           const idx = Number(btn.dataset.index);
-          const pos = swapPickSelected.indexOf(idx);
-          if (pos >= 0) {
-            swapPickSelected.splice(pos, 1);
-          } else if (swapPickSelected.length < 2) {
-            swapPickSelected.push(idx);
+          if (mode === 'inspect') {
+            swapPickSelected = [idx];
           } else {
-            // 已选两发时，再点替换第二发
-            swapPickSelected[1] = idx;
+            const pos = swapPickSelected.indexOf(idx);
+            if (pos >= 0) swapPickSelected.splice(pos, 1);
+            else if (swapPickSelected.length < 2) swapPickSelected.push(idx);
+            else swapPickSelected[1] = idx;
+          }
+          refreshSwapPickHint();
+        };
+      });
+      document.getElementById('swapPickSub').textContent = mode === 'inspect'
+        ? `当前转轮 ${count} 发 · 点选一发查看（第 1 发为下一发，仅你可见内容）`
+        : `当前转轮 ${count} 发 · 点选两发进行交换（第 1 发为下一发）`;
+      refreshSwapPickHint();
+      document.getElementById('swapPickOverlay').classList.add('show');
+    }
+
+    document.getElementById('swapPickCancel').onclick = () => {
+      const wasSnake = swapPickPending && swapPickPending.snakeCast;
+      closeSwapPicker();
+      if (wasSnake) reopenSnakeCastPicker();
+    };
+
+    document.getElementById('swapPickConfirm').onclick = () => {
+      if (!swapPickPending) return;
+      const mode = swapPickPending.mode;
+      const itemIndex = swapPickPending.itemIndex;
+      const snakeCast = !!swapPickPending.snakeCast;
+      if (mode === 'inspect') {
+        if (swapPickSelected.length !== 1) return;
+        const index = swapPickSelected[0];
+        closeSwapPicker();
+        if (snakeCast) castSnakeItem('inspect', { index });
+        else {
+          sendAction({ type: 'use_item', itemIndex, payload: { index } });
+          selectedHand = [];
+        }
+        return;
+      }
+      if (swapPickSelected.length !== 2) return;
+      const [i, j] = swapPickSelected;
+      if (i === j) return;
+      closeSwapPicker();
+      if (snakeCast) castSnakeItem('swap', { i, j });
+      else {
+        sendAction({ type: 'use_item', itemIndex, payload: { i, j } });
+        selectedHand = [];
+      }
+    };
+
+    function closeDiscardHand() {
+      discardHandSelected = [];
+      lastDiscardToken = '';
+      document.getElementById('discardHandOverlay').classList.remove('show');
+      document.getElementById('discardHandRow').innerHTML = '';
+    }
+
+    function refreshDiscardHandHint() {
+      const awaiting = view && view.awaiting;
+      const need = awaiting && awaiting.type === 'discard_hand' ? awaiting.need : 0;
+      const hint = document.getElementById('discardHandHint');
+      const conf = document.getElementById('discardHandConfirm');
+      hint.textContent = `已选 ${discardHandSelected.length} / ${need}`;
+      conf.disabled = discardHandSelected.length !== need;
+      document.querySelectorAll('#discardHandRow .discard-hand-card').forEach((btn) => {
+        const idx = Number(btn.dataset.index);
+        btn.classList.toggle('picked', discardHandSelected.includes(idx));
+      });
+    }
+
+    function maybeShowDiscardHand() {
+      const overlay = document.getElementById('discardHandOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'discard_hand') {
+        if (overlay.classList.contains('show')) closeDiscardHand();
+        return;
+      }
+      const mine = Number(awaiting.actorNr) === Number(myActorNr);
+      if (!mine) {
+        overlay.classList.remove('show');
+        return;
+      }
+      const token = awaiting.token || `hd-${awaiting.actorNr}-${awaiting.need}`;
+      if (token === lastDiscardToken && overlay.classList.contains('show')) return;
+      lastDiscardToken = token;
+      discardHandSelected = [];
+      const hand = (view.me && view.me.hand) || [];
+      document.getElementById('discardHandSub').textContent =
+        `手牌 ${hand.length} 张，请弃置 ${awaiting.need} 张至上限 8 张（剩余 ${awaitingLeftSec(awaiting) ?? awaiting.seconds ?? 30}s）`;
+      document.getElementById('discardHandRow').innerHTML = hand.map((id, i) => {
+        const it = itemMeta(id);
+        return it.art
+          ? `<button type="button" class="discard-hand-card" data-index="${i}"><img src="${it.art}" alt="${it.name}"><span class="dh-name">${it.name}</span></button>`
+          : `<button type="button" class="discard-hand-card fallback" data-index="${i}">${it.glyph}<span class="dh-name">${it.name}</span></button>`;
+      }).join('');
+      document.querySelectorAll('#discardHandRow .discard-hand-card').forEach((btn) => {
+        btn.onclick = () => {
+          const idx = Number(btn.dataset.index);
+          const pos = discardHandSelected.indexOf(idx);
+          if (pos >= 0) discardHandSelected.splice(pos, 1);
+          else if (discardHandSelected.length < awaiting.need) discardHandSelected.push(idx);
+          else discardHandSelected[discardHandSelected.length - 1] = idx;
+          refreshDiscardHandHint();
+        };
+      });
+      refreshDiscardHandHint();
+      overlay.classList.add('show');
+    }
+
+    document.getElementById('discardHandConfirm').onclick = () => {
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'discard_hand') return;
+      if (discardHandSelected.length !== awaiting.need) return;
+      sendAction({ type: 'discard_hand', indexes: discardHandSelected.slice() });
+      closeDiscardHand();
+    };
+
+    function maybeShowGunpowder() {
+      const overlay = document.getElementById('gunpowderOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'gunpowder_peek') {
+        overlay.classList.remove('show');
+        return;
+      }
+      const mine = Number(awaiting.actorNr) === Number(myActorNr);
+      const token = awaiting.token || `gp-${awaiting.actorNr}`;
+      if (token === lastGunpowderToken && overlay.classList.contains('show')) {
+        document.getElementById('gunpowderActions').style.display = mine ? '' : 'none';
+        return;
+      }
+      lastGunpowderToken = token;
+      const sec = awaitingLeftSec(awaiting) ?? awaiting.seconds ?? 30;
+      document.getElementById('gunpowderSub').textContent = mine
+        ? `可查看弹药堆底部 ${awaiting.magBottomCount || 2} 张（仅你可见），也可跳过（剩余 ${sec}s）`
+        : `${awaiting.name || '#' + awaiting.actorNr}（火药）正在抉择是否查看底部弹药…剩余 ${sec}s`;
+      document.getElementById('gunpowderActions').style.display = mine ? '' : 'none';
+      overlay.classList.add('show');
+    }
+
+    document.getElementById('gunpowderSkip').onclick = () => {
+      sendAction({ type: 'gunpowder_peek', accept: false });
+    };
+    document.getElementById('gunpowderPeek').onclick = () => {
+      sendAction({ type: 'gunpowder_peek', accept: true });
+    };
+
+    function armAwaitingWatchdog() {
+      if (awaitingWatchdog) {
+        clearTimeout(awaitingWatchdog);
+        awaitingWatchdog = null;
+      }
+      if (!view || !view.awaiting || !view.awaiting.expiresAt) return;
+      const a = view.awaiting;
+      const animDone = {
+        ammo_draw: 'ammo_draw_done',
+        first_player_spin: 'first_player_done',
+        painkiller_dice: 'painkiller_dice_done',
+        eject_anim: 'eject_done',
+        item_fx: 'item_fx_done',
+        double_barrel_reveal: 'double_barrel_done'
+      };
+      const interactiveTypes = {
+        discard_hand: true,
+        gunpowder_peek: true,
+        double_barrel: true,
+        snake_cast: true
+      };
+      const isInteractive = !!interactiveTypes[a.type];
+      const doneType = animDone[a.type] || (isInteractive ? 'awaiting_timeout' : null);
+      if (!doneType) return;
+      // 动画：仅房主兜底；交互窗口：房主或本人均可触发超时
+      if (!isHost() && !(isInteractive && Number(a.actorNr) === Number(myActorNr))) return;
+      const token = a.token;
+      const ms = Math.max(300, (a.expiresAt || Date.now()) - Date.now() + 80);
+      awaitingWatchdog = setTimeout(() => {
+        awaitingWatchdog = null;
+        if (!view || !view.awaiting || view.awaiting.token !== token) return;
+        sendAction({ type: doneType });
+      }, ms);
+    }
+
+    function awaitingLeftSec(awaiting) {
+      if (!awaiting || !awaiting.expiresAt) return null;
+      return Math.max(0, Math.ceil((awaiting.expiresAt - Date.now()) / 1000));
+    }
+
+    function clearInteractiveCountdown() {
+      if (interactiveCountdownTimer) {
+        clearInterval(interactiveCountdownTimer);
+        interactiveCountdownTimer = null;
+      }
+    }
+
+    function refreshInteractiveCountdownUi() {
+      if (!view || !view.awaiting) return;
+      const a = view.awaiting;
+      const sec = awaitingLeftSec(a);
+      if (sec == null) return;
+      if (a.type === 'discard_hand') {
+        const sub = document.getElementById('discardHandSub');
+        if (sub && document.getElementById('discardHandOverlay').classList.contains('show')) {
+          const hand = (view.me && view.me.hand) || [];
+          sub.textContent = `手牌 ${hand.length} 张，请弃置 ${a.need} 张至上限 8 张（剩余 ${sec}s）`;
+        }
+      } else if (a.type === 'gunpowder_peek') {
+        const sub = document.getElementById('gunpowderSub');
+        if (sub && document.getElementById('gunpowderOverlay').classList.contains('show')) {
+          const mine = Number(a.actorNr) === Number(myActorNr);
+          sub.textContent = mine
+            ? `可查看弹药堆底部 ${a.magBottomCount || 2} 张（仅你可见），也可跳过（剩余 ${sec}s）`
+            : `${a.name || '#' + a.actorNr}（火药）正在抉择…剩余 ${sec}s`;
+        }
+      } else if (a.type === 'double_barrel') {
+        const sub = document.getElementById('dbDeclareSub');
+        if (sub && document.getElementById('dbDeclareOverlay').classList.contains('show')) {
+          const mine = Number(a.actorNr) === Number(myActorNr);
+          const count = a.magSize || 0;
+          sub.textContent = mine
+            ? `当前转轮 ${count} 发 · 点选一发并声明实弹/空弹，也可跳过（剩余 ${sec}s）`
+            : `${a.name || '#' + a.actorNr}（双管）正在选择声明…剩余 ${sec}s`;
+        }
+      } else if (a.type === 'snake_cast') {
+        // 状态条倒计时已在 render 中刷新；此处刷新 awaitHint
+      }
+      const awaitHint = document.getElementById('awaitHint');
+      const awaitBar = document.getElementById('awaitBar');
+      if (awaitBar && awaitBar.style.display !== 'none' && awaitHint) {
+        if (a.type === 'double_barrel') {
+          awaitHint.textContent = `${a.name || '#' + a.actorNr}（双管）正在声明… ${sec}s`;
+        } else if (a.type === 'discard_hand') {
+          awaitHint.textContent = `${a.name || '#' + a.actorNr} 正在选择弃牌… ${sec}s`;
+        } else if (a.type === 'gunpowder_peek') {
+          awaitHint.textContent = `${a.name || '#' + a.actorNr}（火药）抉择中… ${sec}s`;
+        } else if (a.type === 'snake_cast') {
+          awaitHint.textContent =
+            `${a.name || '#' + a.actorNr} 正为复制的【${a.itemName || '道具'}】选择目标… ${sec}s`;
+        }
+      }
+    }
+
+    function armInteractiveCountdown() {
+      clearInteractiveCountdown();
+      const a = view && view.awaiting;
+      const types = { discard_hand: 1, gunpowder_peek: 1, double_barrel: 1, snake_cast: 1 };
+      if (!a || !types[a.type] || !a.expiresAt) return;
+      const token = a.token;
+      refreshInteractiveCountdownUi();
+      interactiveCountdownTimer = setInterval(() => {
+        if (!view || !view.awaiting || view.awaiting.token !== token) {
+          clearInteractiveCountdown();
+          return;
+        }
+        refreshInteractiveCountdownUi();
+      }, 250);
+    }
+
+    function reopenSnakeCastPicker() {
+      // 取消点选后清空 token，允许再次弹出施放 UI（已扣血，必须完成施放）
+      lastSnakeCastToken = '';
+      setTimeout(() => maybeShowSnakeCast(), 0);
+    }
+
+    function castSnakeItem(itemId, payload) {
+      sendAction({ type: 'rattlesnake_cast', payload: payload || {} });
+    }
+
+    function maybeShowSnakeCast() {
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'snake_cast') {
+        lastSnakeCastToken = '';
+        return;
+      }
+      if (Number(awaiting.actorNr) !== Number(myActorNr)) return;
+      // 若点选窗已开着，不必重复打开
+      if (document.getElementById('playerPickOverlay').classList.contains('show')) return;
+      if (document.getElementById('swapPickOverlay').classList.contains('show')) return;
+      const token = awaiting.token || `sc-${awaiting.itemId}-${awaiting.actorNr}`;
+      if (token === lastSnakeCastToken) return;
+      lastSnakeCastToken = token;
+      const itemId = awaiting.itemId;
+      const itemName = awaiting.itemName || itemId;
+
+      if (itemId === 'bind') {
+        openPlayerPicker({
+          title: `响尾蛇复制 · ${itemName}`,
+          sub: '请选择捆绑目标（取消将重新打开，必须完成施放）',
+          players: view.players,
+          selectable: (p) => p.alive && Number(p.actorNr) !== Number(myActorNr),
+          min: 1,
+          max: 1,
+          confirmLabel: '施放',
+          onConfirm: (nrs) => castSnakeItem(itemId, { targetActorNr: nrs[0] }),
+          onCancel: () => reopenSnakeCastPicker()
+        });
+        return;
+      }
+      if (itemId === 'double_arrow') {
+        openPlayerPicker({
+          title: `响尾蛇复制 · ${itemName}`,
+          sub: '自行选择 1～2 名连锁目标（每人同时仅可与一人连锁）；或解除全部连锁（取消将重新打开）',
+          players: view.players,
+          selectable: (p) => p.alive,
+          min: 1,
+          max: 2,
+          confirmLabel: '建立连锁',
+          extraLabel: '解除连锁',
+          onConfirm: (nrs) => castSnakeItem(itemId, { targets: nrs }),
+          onExtra: () => castSnakeItem(itemId, { unlock: true }),
+          onCancel: () => reopenSnakeCastPicker()
+        });
+        return;
+      }
+      if (itemId === 'swap' || itemId === 'inspect') {
+        openAmmoPickerForSnake(itemId);
+      }
+    }
+
+    function openAmmoPickerForSnake(mode) {
+      if (!view || !view.magazineCount) {
+        alert(mode === 'inspect' ? '弹药堆为空' : '弹药不足');
+        lastSnakeCastToken = '';
+        return;
+      }
+      if (mode === 'swap' && view.magazineCount < 2) {
+        alert('弹药不足两发');
+        lastSnakeCastToken = '';
+        return;
+      }
+      closePlayerPicker();
+      swapPickPending = { itemIndex: -1, mode, snakeCast: true };
+      swapPickSelected = [];
+      const row = document.getElementById('swapPickRow');
+      const count = view.magazineCount;
+      document.getElementById('ammoPickTitle').textContent =
+        mode === 'inspect' ? '响尾蛇复制 · 检视' : '响尾蛇复制 · 换弹';
+      document.getElementById('swapPickConfirm').textContent = mode === 'inspect' ? '检视' : '交换';
+      row.innerHTML = Array.from({ length: count }, (_, i) => `
+        <button type="button" class="ammo-pick-shell" data-index="${i}" aria-label="第 ${i + 1} 发">
+          <span class="shell unknown"></span>
+          <span class="ammo-pick-ord">第 ${i + 1} 发</span>
+        </button>
+      `).join('');
+      row.querySelectorAll('.ammo-pick-shell').forEach((btn) => {
+        btn.onclick = () => {
+          const idx = Number(btn.dataset.index);
+          if (mode === 'inspect') swapPickSelected = [idx];
+          else {
+            const pos = swapPickSelected.indexOf(idx);
+            if (pos >= 0) swapPickSelected.splice(pos, 1);
+            else if (swapPickSelected.length < 2) swapPickSelected.push(idx);
+            else swapPickSelected[1] = idx;
           }
           refreshSwapPickHint();
         };
       });
       document.getElementById('swapPickSub').textContent =
-        `当前转轮 ${count} 发 · 点选两发进行交换（第 1 发为下一发）`;
+        '响尾蛇复制：请自行点选（取消将重新打开，必须完成施放）';
       refreshSwapPickHint();
       document.getElementById('swapPickOverlay').classList.add('show');
     }
-
-    document.getElementById('swapPickCancel').onclick = () => closeSwapPicker();
-
-    document.getElementById('swapPickConfirm').onclick = () => {
-      if (!swapPickPending || swapPickSelected.length !== 2) return;
-      const [i, j] = swapPickSelected;
-      if (i === j) return;
-      const itemIndex = swapPickPending.itemIndex;
-      closeSwapPicker();
-      sendAction({ type: 'use_item', itemIndex, payload: { i, j } });
-      selectedHand = [];
-    };
 
     document.getElementById('ironRoseBtn').onclick = () => {
       sendAction({ type: 'iron_rose', handIndexes: selectedHand.slice(0, 2) });

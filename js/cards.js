@@ -97,7 +97,7 @@ const ITEMS = {
   double_arrow: {
     id: 'double_arrow', name: '一箭双雕', glyph: '雕', hue: 320,
     art: 'assets/tools/double_arrow.jpg',
-    desc: '连锁或解锁一到两名玩家，被连锁的玩家同时受到下一次伤害。'
+    desc: '连锁或解锁一到两名玩家；每人同时仅可与一人连锁，冲突时旧连锁自动解除。被连锁的玩家同时受到下一次伤害。'
   }
 };
 

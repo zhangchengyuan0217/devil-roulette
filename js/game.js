@@ -3,6 +3,76 @@
 const MAX_HP = 6;
 const HAND_LIMIT = 8;
 
+/** 客户端动画最长等待；超时后房主可自动推进，任意客户端也可提前发送 done */
+const AWAITING_ANIM_MS = {
+  ammo_draw: 5200,
+  first_player_spin: 3500,
+  painkiller_dice: 2800,
+  eject_anim: 2800,
+  item_fx: 3200,
+  double_barrel_reveal: 3800
+};
+
+/** 需玩家操作的窗口超时（弃牌 / 火药 / 双管 / 响尾蛇施放） */
+const INTERACTIVE_AWAITING_MS = 30000;
+
+const AWAITING_TIMEOUT_MS = Object.assign({}, AWAITING_ANIM_MS, {
+  discard_hand: INTERACTIVE_AWAITING_MS,
+  gunpowder_peek: INTERACTIVE_AWAITING_MS,
+  double_barrel: INTERACTIVE_AWAITING_MS,
+  snake_cast: INTERACTIVE_AWAITING_MS
+});
+
+function stampAwaitingExpiry(awaiting, type) {
+  if (!awaiting) return awaiting;
+  const ms = AWAITING_TIMEOUT_MS[type || awaiting.type];
+  if (ms) {
+    awaiting.expiresAt = Date.now() + ms;
+    if (ms >= 10000) awaiting.seconds = Math.round(ms / 1000);
+  }
+  return awaiting;
+}
+
+function resolveExpiredAwaiting(state) {
+  const a = state.awaiting;
+  if (!a || !a.expiresAt) return false;
+  if (Date.now() < a.expiresAt) return false;
+  switch (a.type) {
+    case 'ammo_draw':
+      continueAfterAmmoDraw(state);
+      return true;
+    case 'first_player_spin':
+      continueAfterFirstPlayer(state);
+      return true;
+    case 'painkiller_dice':
+      continueAfterPainkillerDice(state);
+      return true;
+    case 'eject_anim':
+      continueAfterEject(state);
+      return true;
+    case 'item_fx':
+      continueAfterItemFx(state);
+      return true;
+    case 'double_barrel_reveal':
+      continueAfterDoubleBarrelReveal(state);
+      return true;
+    case 'discard_hand':
+      timeoutDiscardHand(state);
+      return true;
+    case 'gunpowder_peek':
+      timeoutGunpowderPeek(state);
+      return true;
+    case 'double_barrel':
+      timeoutDoubleBarrel(state);
+      return true;
+    case 'snake_cast':
+      timeoutSnakeCast(state);
+      return true;
+    default:
+      return false;
+  }
+}
+
 function createEmptyState() {
   return {
     phase: 'lobby', // lobby | playing | ended
@@ -20,7 +90,8 @@ function createEmptyState() {
     effects: {
       reverseNext: false,
       shotgunNext: false,
-      linked: [], // actorNr[]
+      // 连锁配对：每组 1～2 人；每人同时只能出现在一组中
+      linkedPairs: [], // Array<actorNr[]>
       doubleItemBonus: {} // actorNr -> extra draws next round
     },
     awaiting: null, // { type, actorNr, ... }
@@ -94,10 +165,170 @@ function drawItems(state, player, n) {
     }
     player.hand.push(state.itemDeck.pop());
   }
-  while (player.hand.length > HAND_LIMIT) {
-    const dumped = player.hand.pop();
-    state.itemDiscard.push(dumped);
-    logState(state, `${player.name} 手牌超限，弃置【${ITEMS[dumped].name}】。`);
+  queueHandDiscardIfNeeded(state, player);
+}
+
+function queueHandDiscardIfNeeded(state, player) {
+  if (!player || player.hand.length <= HAND_LIMIT) return;
+  if (!state.handDiscardQueue) state.handDiscardQueue = [];
+  if (!state.handDiscardQueue.includes(player.actorNr)) {
+    state.handDiscardQueue.push(player.actorNr);
+  }
+}
+
+function tryStartHandDiscard(state) {
+  if (state.awaiting) return false;
+  if (!state.handDiscardQueue) state.handDiscardQueue = [];
+  while (state.handDiscardQueue.length) {
+    const nr = state.handDiscardQueue.shift();
+    const p = getPlayer(state, nr);
+    if (!p || !p.alive || p.hand.length <= HAND_LIMIT) continue;
+    state.awaiting = stampAwaitingExpiry(
+      {
+        type: 'discard_hand',
+        actorNr: p.actorNr,
+        name: p.name,
+        need: p.hand.length - HAND_LIMIT,
+        handCount: p.hand.length,
+        token: `hd-${state.round}-${p.actorNr}-${Date.now()}`
+      },
+      'discard_hand'
+    );
+    logState(
+      state,
+      `${p.name} 手牌 ${p.hand.length} 张，需弃至 ${HAND_LIMIT} 张（自选 ${state.awaiting.need} 张，限时 ${state.awaiting.seconds} 秒）。`
+    );
+    return true;
+  }
+  return false;
+}
+
+function resumeAfterHandDiscard(state) {
+  if (tryStartHandDiscard(state)) return;
+  if (state.pendingAmmoDraw) {
+    const pad = state.pendingAmmoDraw;
+    state.pendingAmmoDraw = null;
+    state.awaiting = stampAwaitingExpiry(Object.assign({ type: 'ammo_draw' }, pad), 'ammo_draw');
+    logState(state, `第 ${pad.round} 轮弹药数量抽取中…`);
+    return;
+  }
+}
+
+function discardHandCards(state, actorNr, indexes) {
+  if (!state.awaiting || state.awaiting.type !== 'discard_hand') {
+    return { ok: false, reason: '当前无需弃牌' };
+  }
+  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
+    return { ok: false, reason: '不是你的弃牌' };
+  }
+  const p = getPlayer(state, actorNr);
+  if (!p) return { ok: false, reason: '玩家不存在' };
+  const need = state.awaiting.need;
+  if (!Array.isArray(indexes) || indexes.length !== need) {
+    return { ok: false, reason: `需弃置 ${need} 张` };
+  }
+  const uniq = [...new Set(indexes.map((i) => i | 0))].sort((a, b) => b - a);
+  if (uniq.length !== need) return { ok: false, reason: '弃牌选择重复' };
+  if (uniq.some((i) => i < 0 || i >= p.hand.length)) return { ok: false, reason: '弃牌无效' };
+  const names = [];
+  uniq.forEach((i) => {
+    const id = p.hand.splice(i, 1)[0];
+    state.itemDiscard.push(id);
+    names.push(ITEMS[id] ? ITEMS[id].name : id);
+  });
+  logState(state, `${p.name} 弃置：${names.map((n) => '【' + n + '】').join('、')}。`);
+  state.awaiting = null;
+  resumeAfterHandDiscard(state);
+  return { ok: true };
+}
+
+function timeoutDiscardHand(state) {
+  if (!state.awaiting || state.awaiting.type !== 'discard_hand') return;
+  const actorNr = state.awaiting.actorNr;
+  const need = state.awaiting.need;
+  const p = getPlayer(state, actorNr);
+  if (!p || need <= 0) {
+    state.awaiting = null;
+    resumeAfterHandDiscard(state);
+    return;
+  }
+  const idxs = [];
+  for (let i = p.hand.length - 1; i >= 0 && idxs.length < need; i--) idxs.push(i);
+  if (idxs.length !== need) {
+    logState(state, `${p.name} 弃牌超时，强制弃至上限。`);
+    while (p.hand.length > HAND_LIMIT) state.itemDiscard.push(p.hand.pop());
+    state.awaiting = null;
+    resumeAfterHandDiscard(state);
+    return;
+  }
+  logState(state, `${p.name} 弃牌超时，系统代为弃置手牌末尾 ${idxs.length} 张。`);
+  discardHandCards(state, actorNr, idxs);
+}
+
+function timeoutGunpowderPeek(state) {
+  if (!state.awaiting || state.awaiting.type !== 'gunpowder_peek') return;
+  const actorNr = state.awaiting.actorNr;
+  const player = getPlayer(state, actorNr);
+  state.awaiting = null;
+  if (!player) return;
+  player.peekedBottom = null;
+  logState(state, `${player.name}（火药）超时，视为不查看。`);
+  logState(state, `轮到 ${player.name} 行动。弹药剩余 ${state.magazine.length}。`);
+  tryStartHandDiscard(state);
+}
+
+function timeoutDoubleBarrel(state) {
+  if (!state.awaiting || state.awaiting.type !== 'double_barrel') return;
+  const actorNr = state.awaiting.actorNr;
+  const player = getPlayer(state, actorNr);
+  logState(state, `${player ? player.name : '#' + actorNr}（双管）超时，本轮不声明。`);
+  state.awaiting = null;
+  beginTurns(state);
+}
+
+function defaultSnakeCastPayload(state, actorNr, itemId) {
+  if (itemId === 'bind') {
+    const foes = alivePlayers(state).filter((x) => x.actorNr !== actorNr);
+    if (!foes.length) return null;
+    return { targetActorNr: foes[0].actorNr };
+  }
+  if (itemId === 'double_arrow') {
+    const alive = alivePlayers(state);
+    if (!alive.length) return null;
+    return { targets: alive.slice(0, Math.min(2, alive.length)).map((x) => x.actorNr) };
+  }
+  if (itemId === 'inspect') {
+    if (!state.magazine.length) return null;
+    return { index: 0 };
+  }
+  if (itemId === 'swap') {
+    if (state.magazine.length < 2) return null;
+    return { i: 0, j: 1 };
+  }
+  return {};
+}
+
+function timeoutSnakeCast(state) {
+  if (!state.awaiting || state.awaiting.type !== 'snake_cast') return;
+  const actorNr = state.awaiting.actorNr;
+  const itemId = state.awaiting.itemId;
+  const itemName = state.awaiting.itemName || '道具';
+  const p = getPlayer(state, actorNr);
+  const payload = defaultSnakeCastPayload(state, actorNr, itemId);
+  if (!payload) {
+    logState(state, `${p ? p.name : '#' + actorNr} 复制【${itemName}】施放超时且无法自动选择，效果作废。`);
+    state.awaiting = null;
+    tryStartHandDiscard(state);
+    return;
+  }
+  logState(state, `${p ? p.name : '#' + actorNr} 复制【${itemName}】施放超时，系统代为选择。`);
+  const result = rattlesnakeCast(state, actorNr, payload);
+  if (!result.ok) {
+    logState(state, `自动施放失败：${result.reason || '未知'}，效果作废。`);
+    if (state.awaiting && state.awaiting.type === 'snake_cast') {
+      state.awaiting = null;
+      tryStartHandDiscard(state);
+    }
   }
 }
 
@@ -174,8 +405,7 @@ function startRound(state) {
     };
   }
 
-  state.awaiting = {
-    type: 'ammo_draw',
+  state.pendingAmmoDraw = {
     round: state.round,
     live: liveCount,
     blank: blankCount,
@@ -183,23 +413,31 @@ function startRound(state) {
     token: `ammo-${state.round}-${Date.now()}`,
     firstPlayer
   };
-  logState(state, `第 ${state.round} 轮弹药数量抽取中…`);
+  state.awaiting = null;
+  state.handDiscardQueue = alive
+    .filter((p) => p.hand.length > HAND_LIMIT)
+    .map((p) => p.actorNr);
+  if (tryStartHandDiscard(state)) return;
+  resumeAfterHandDiscard(state);
 }
 
 function continueAfterAmmoDraw(state) {
   if (!state.awaiting || state.awaiting.type !== 'ammo_draw') {
-    return { ok: false, reason: '无需确认弹药抽取' };
+    return { ok: true, reason: '已结算' };
   }
   const firstPlayer = state.awaiting.firstPlayer;
   state.awaiting = null;
   if (firstPlayer) {
-    state.awaiting = {
-      type: 'first_player_spin',
-      actorNr: firstPlayer.actorNr,
-      round: firstPlayer.round,
-      token: firstPlayer.token,
-      candidates: firstPlayer.candidates
-    };
+    state.awaiting = stampAwaitingExpiry(
+      {
+        type: 'first_player_spin',
+        actorNr: firstPlayer.actorNr,
+        round: firstPlayer.round,
+        token: firstPlayer.token,
+        candidates: firstPlayer.candidates
+      },
+      'first_player_spin'
+    );
     logState(state, `本局先手抽取中…`);
     return { ok: true };
   }
@@ -211,14 +449,17 @@ function proceedRoundAfterSetup(state) {
   const alive = alivePlayers(state);
   const db = alive.find((p) => p.role === 'double_barrel');
   if (db && state.magazine.length > 0) {
-    state.awaiting = {
-      type: 'double_barrel',
-      actorNr: db.actorNr,
-      name: db.name,
-      magSize: state.magazine.length,
-      token: `db-${state.round}-${db.actorNr}-${Date.now()}`
-    };
-    logState(state, `${db.name}（双管）请声明第几发是实弹或空弹。`);
+    state.awaiting = stampAwaitingExpiry(
+      {
+        type: 'double_barrel',
+        actorNr: db.actorNr,
+        name: db.name,
+        magSize: state.magazine.length,
+        token: `db-${state.round}-${db.actorNr}-${Date.now()}`
+      },
+      'double_barrel'
+    );
+    logState(state, `${db.name}（双管）请声明第几发是实弹或空弹（限时 ${state.awaiting.seconds} 秒）。`);
     return;
   }
   beginTurns(state);
@@ -226,7 +467,7 @@ function proceedRoundAfterSetup(state) {
 
 function continueAfterFirstPlayer(state) {
   if (!state.awaiting || state.awaiting.type !== 'first_player_spin') {
-    return { ok: false, reason: '无需确认先手' };
+    return { ok: true, reason: '已结算' };
   }
   const starter = getPlayer(state, state.awaiting.actorNr);
   const name = starter ? starter.name : `#${state.awaiting.actorNr}`;
@@ -237,19 +478,41 @@ function continueAfterFirstPlayer(state) {
 }
 
 function beginTurns(state) {
-  // 找到第一个可行动玩家
-  for (let i = 0; i < state.turnOrder.length; i++) {
-    state.currentTurn = i;
-    const p = currentPlayer(state);
-    if (p && p.alive && !p.skipNextTurn) {
-      onTurnStart(state, p);
-      return;
-    }
-    if (p && p.skipNextTurn) {
-      p.skipNextTurn = false;
-      logState(state, `${p.name} 被捆绑，跳过本回合。`);
-    }
+  const n = state.turnOrder.length;
+  if (!n) return;
+  // 新一轮：从上一轮结束处的下一位续；否则从当前指针开始找
+  let start = state.currentTurn || 0;
+  if (state.nextRoundStartTurn != null) {
+    start = state.nextRoundStartTurn % n;
+    state.nextRoundStartTurn = null;
   }
+  let aliveSeen = 0;
+  let boundSkips = 0;
+  for (let step = 0; step < n; step++) {
+    state.currentTurn = (start + step) % n;
+    const p = currentPlayer(state);
+    if (!p || !p.alive) continue;
+    aliveSeen += 1;
+    if (p.skipNextTurn) {
+      p.skipNextTurn = false;
+      boundSkips += 1;
+      logState(state, `${p.name} 被捆绑，跳过本回合。`);
+      continue;
+    }
+    onTurnStart(state, p);
+    return;
+  }
+  if (aliveSeen > 0 && boundSkips === aliveSeen) {
+    logState(state, '全员均被捆绑跳过，自动开启新一轮。');
+    markNextRoundResume(state);
+    startRound(state);
+  }
+}
+
+function markNextRoundResume(state) {
+  const n = state.turnOrder.length;
+  if (!n) return;
+  state.nextRoundStartTurn = (state.currentTurn + 1) % n;
 }
 
 function currentPlayer(state) {
@@ -258,52 +521,139 @@ function currentPlayer(state) {
 }
 
 function moveToNextPlayer(state) {
-  state.currentTurn = (state.currentTurn + 1) % state.turnOrder.length;
-  let guard = 0;
-  while (guard++ < state.turnOrder.length + 2) {
+  const n = state.turnOrder.length;
+  if (!n) return;
+  let aliveSeen = 0;
+  let boundSkips = 0;
+  for (let step = 0; step < n; step++) {
+    state.currentTurn = (state.currentTurn + 1) % n;
     const p = currentPlayer(state);
-    if (p && p.alive && !p.skipNextTurn) {
-      onTurnStart(state, p);
-      return;
-    }
-    if (p && p.skipNextTurn) {
+    if (!p || !p.alive) continue;
+    aliveSeen += 1;
+    if (p.skipNextTurn) {
       p.skipNextTurn = false;
+      boundSkips += 1;
       logState(state, `${p.name} 被捆绑，跳过本回合。`);
+      continue;
     }
-    state.currentTurn = (state.currentTurn + 1) % state.turnOrder.length;
+    onTurnStart(state, p);
+    return;
+  }
+  if (aliveSeen > 0 && boundSkips === aliveSeen) {
+    logState(state, '全员均被捆绑跳过，自动开启新一轮。');
+    markNextRoundResume(state);
+    startRound(state);
   }
 }
 
 function onTurnStart(state, player) {
   player.peekedBottom = null;
   if (player.role === 'gunpowder' && state.magazine.length > 0) {
-    const bottom = state.magazine.slice(0, Math.min(2, state.magazine.length));
-    player.peekedBottom = bottom.slice();
-    logState(state, `${player.name}（火药）查看了弹药堆底部 ${bottom.length} 张（仅自己可见）。`);
+    state.awaiting = stampAwaitingExpiry(
+      {
+        type: 'gunpowder_peek',
+        actorNr: player.actorNr,
+        name: player.name,
+        magBottomCount: Math.min(2, state.magazine.length),
+        token: `gp-${state.round}-${player.actorNr}-${Date.now()}`
+      },
+      'gunpowder_peek'
+    );
+    logState(
+      state,
+      `${player.name}（火药）可选择查看弹药堆底部 ${state.awaiting.magBottomCount} 张（限时 ${state.awaiting.seconds} 秒）。`
+    );
+    return;
   }
   logState(state, `轮到 ${player.name} 行动。弹药剩余 ${state.magazine.length}。`);
 }
 
-function applyDamage(state, target, amount, sourceMsg) {
-  if (!target.alive || amount <= 0) return;
-  const linked = state.effects.linked.filter((nr) => nr !== target.actorNr);
-  const victims = [target];
-  linked.forEach((nr) => {
+function resolveGunpowderPeek(state, actorNr, accept) {
+  if (!state.awaiting || state.awaiting.type !== 'gunpowder_peek') {
+    return { ok: false, reason: '无需火药抉择' };
+  }
+  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
+    return { ok: false, reason: '不是你的火药窗口' };
+  }
+  const player = getPlayer(state, actorNr);
+  state.awaiting = null;
+  if (!player) return { ok: false, reason: '玩家不存在' };
+  if (accept && state.magazine.length > 0) {
+    const bottom = state.magazine.slice(0, Math.min(2, state.magazine.length));
+    player.peekedBottom = bottom.slice();
+    logState(state, `${player.name}（火药）查看了弹药堆底部 ${bottom.length} 张（仅自己可见）。`);
+  } else {
+    player.peekedBottom = null;
+    logState(state, `${player.name}（火药）选择不查看底部弹药。`);
+  }
+  logState(state, `轮到 ${player.name} 行动。弹药剩余 ${state.magazine.length}。`);
+  tryStartHandDiscard(state);
+  return { ok: true };
+}
+
+function linkPairLabel(state, pair) {
+  return pair.map((nr) => {
     const p = getPlayer(state, nr);
-    if (p && p.alive) victims.push(p);
+    return p ? p.name : `#${nr}`;
+  }).join('与');
+}
+
+function findLinkPairIndex(state, actorNr) {
+  return state.effects.linkedPairs.findIndex((pair) => pair.includes(actorNr));
+}
+
+/** 解除与给定玩家有交集的连锁组；每人同时仅可与一人连锁 */
+function dissolveConflictingLinks(state, actorNrs) {
+  const set = new Set(actorNrs.map((nr) => Number(nr)));
+  const kept = [];
+  const dissolved = [];
+  state.effects.linkedPairs.forEach((pair) => {
+    if (pair.some((nr) => set.has(nr))) dissolved.push(pair);
+    else kept.push(pair);
   });
+  if (!dissolved.length) return;
+  state.effects.linkedPairs = kept;
+  logState(
+    state,
+    `连锁自动解除：${dissolved.map((pair) => linkPairLabel(state, pair)).join('；')}（每人同时仅可与一人连锁）。`
+  );
+}
+
+function removeLinkPairAt(state, index) {
+  if (index < 0) return;
+  state.effects.linkedPairs.splice(index, 1);
+}
+
+function flattenLinked(state) {
+  return [...new Set(state.effects.linkedPairs.flat())];
+}
+
+function applyDamage(state, target, amount, sourceMsg, opts) {
+  if (!target.alive || amount <= 0) return;
+  const allowChain = !(opts && opts.chain === false);
+  const pairIdx = allowChain ? findLinkPairIndex(state, target.actorNr) : -1;
+  const pair = pairIdx >= 0 ? state.effects.linkedPairs[pairIdx].slice() : null;
+  const victims = [target];
+  // 仅当受伤者本身在连锁中时，其配对对象一并受伤
+  if (pair) {
+    pair.forEach((nr) => {
+      if (nr === target.actorNr) return;
+      const p = getPlayer(state, nr);
+      if (p && p.alive) victims.push(p);
+    });
+  }
   // 连锁：同时各扣
   victims.forEach((v) => {
     v.hp -= amount;
-    logState(state, `${sourceMsg}${v.name} 受到 ${amount} 点伤害（剩余 ${Math.max(v.hp, 0)}）。`);
+    logState(state, `${sourceMsg || ''}${v.name} 受到 ${amount} 点伤害（剩余 ${Math.max(v.hp, 0)}）。`);
     if (v.hp <= 0) {
       v.hp = 0;
       v.alive = false;
       logState(state, `${v.name} 出局！`);
     }
   });
-  if (linked.length) {
-    state.effects.linked = [];
+  if (pair) {
+    removeLinkPairAt(state, pairIdx);
     logState(state, '连锁已触发并清除。');
   }
   checkWin(state);
@@ -388,13 +738,22 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
         nightOwlTargetNr = foes[0] && foes[0].actorNr;
       }
       const foe = getPlayer(state, nightOwlTargetNr);
-      // 同时结算，避免连锁被第一次 apply 清掉
+      // 夜枭：自己与所选对手同时扣血；连锁规则与 applyDamage 对齐
+      // （仅扩展受伤者各自所在的配对，并清除这些配对）
       const amount = dmg;
-      const victims = [shooter];
-      if (foe && foe.alive) victims.push(foe);
-      state.effects.linked.forEach((nr) => {
-        const p = getPlayer(state, nr);
-        if (p && p.alive && !victims.includes(p)) victims.push(p);
+      const primary = [shooter];
+      if (foe && foe.alive) primary.push(foe);
+      const pairIndexes = [];
+      primary.forEach((p) => {
+        const idx = findLinkPairIndex(state, p.actorNr);
+        if (idx >= 0 && !pairIndexes.includes(idx)) pairIndexes.push(idx);
+      });
+      const victims = primary.slice();
+      pairIndexes.forEach((idx) => {
+        state.effects.linkedPairs[idx].forEach((nr) => {
+          const p = getPlayer(state, nr);
+          if (p && p.alive && !victims.includes(p)) victims.push(p);
+        });
       });
       victims.forEach((v) => {
         v.hp -= amount;
@@ -405,8 +764,8 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
           logState(state, `${v.name} 出局！`);
         }
       });
-      if (state.effects.linked.length) {
-        state.effects.linked = [];
+      if (pairIndexes.length) {
+        pairIndexes.sort((a, b) => b - a).forEach((idx) => removeLinkPairAt(state, idx));
         logState(state, '连锁已触发并清除。');
       }
       checkWin(state);
@@ -427,6 +786,7 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
 
   if (state.magazine.length === 0) {
     logState(state, '弹药打空，本轮结束。');
+    markNextRoundResume(state);
     startRound(state);
     return { ok: true };
   }
@@ -437,7 +797,52 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
   } else {
     moveToNextPlayer(state);
   }
+  if (!state.awaiting) tryStartHandDiscard(state);
   return { ok: true };
+}
+
+function validateItemUse(state, player, itemId, payload) {
+  payload = payload || {};
+  switch (itemId) {
+    case 'eject':
+    case 'peek_top':
+      if (!state.magazine.length) return '弹药堆为空，无法使用';
+      break;
+    case 'inspect': {
+      const idx = typeof payload.index === 'number' ? payload.index : -1;
+      if (idx < 0 || idx >= state.magazine.length) return '检视位置无效';
+      break;
+    }
+    case 'swap': {
+      const i = payload.i | 0;
+      const j = payload.j | 0;
+      if (state.magazine.length < 2) return '弹药不足两发，无法换弹';
+      if (i === j) return '请选择两发不同的弹药';
+      if (i < 0 || j < 0 || i >= state.magazine.length || j >= state.magazine.length) {
+        return '换弹位置无效';
+      }
+      break;
+    }
+    case 'bind': {
+      const t = getPlayer(state, payload.targetActorNr);
+      if (!t || !t.alive || t.actorNr === player.actorNr) return '捆绑目标无效';
+      break;
+    }
+    case 'double_arrow': {
+      if (!payload.unlock) {
+        const raw = payload.targets || [];
+        const uniq = [...new Set(raw.map((nr) => Number(nr)))];
+        if (uniq.length < 1 || uniq.length > 2) return '连锁需选择 1～2 名玩家';
+        const targets = uniq.map((nr) => getPlayer(state, nr)).filter((p) => p && p.alive);
+        if (targets.length !== uniq.length) return '连锁目标无效';
+        if (targets.length < 1 || targets.length > 2) return '连锁需选择 1～2 名玩家';
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return null;
 }
 
 function useItem(state, actorNr, itemIndex, payload) {
@@ -448,6 +853,9 @@ function useItem(state, actorNr, itemIndex, payload) {
   if (itemIndex < 0 || itemIndex >= player.hand.length) return { ok: false, reason: '无效道具' };
 
   const itemId = player.hand[itemIndex];
+  const bad = validateItemUse(state, player, itemId, payload || {});
+  if (bad) return { ok: false, reason: bad };
+
   player.hand.splice(itemIndex, 1);
   state.itemDiscard.push(itemId);
   logState(state, `${player.name} 使用【${ITEMS[itemId].name}】。`);
@@ -457,6 +865,7 @@ function useItem(state, actorNr, itemIndex, payload) {
   // 若道具效果已进入新轮声明/先手等 awaiting，则不再插入响尾蛇窗口
   if (state.awaiting && state.awaiting !== awaitingBefore) return result;
   offerRattlesnake(state, player, itemId, payload);
+  if (!state.awaiting) tryStartHandDiscard(state);
   return result;
 }
 
@@ -475,7 +884,7 @@ function offerRattlesnake(state, sourcePlayer, itemId, originalPayload) {
     state.rattlesnakeQueue = [];
     return;
   }
-  state.lastItemForSnake = { itemId, payload: originalPayload || {}, from: sourcePlayer.actorNr };
+  state.lastItemForSnake = { itemId, from: sourcePlayer.actorNr };
   state.rattlesnakeQueue = snakes.map((p) => p.actorNr);
   beginRattlesnakeWindow(state);
 }
@@ -505,12 +914,17 @@ function beginRattlesnakeWindow(state) {
   state.awaiting = null;
   state.lastItemForSnake = null;
   state.rattlesnakeQueue = [];
+  tryStartHandDiscard(state);
 }
 
 function clearRattlesnakeOpportunity(state) {
   state.awaiting = null;
   state.lastItemForSnake = null;
   state.rattlesnakeQueue = [];
+}
+
+function itemNeedsSnakeCast(itemId) {
+  return itemId === 'bind' || itemId === 'swap' || itemId === 'inspect' || itemId === 'double_arrow';
 }
 
 function rattlesnakeCopy(state, actorNr) {
@@ -525,15 +939,60 @@ function rattlesnakeCopy(state, actorNr) {
   if (p.hp < 1) return { ok: false, reason: '血量不足' };
   p.hp -= 1;
   state.rattlesnakeUsedThisRound[actorNr] = true;
-  const { itemId, payload } = state.lastItemForSnake;
-  logState(state, `${p.name}（响尾蛇）消耗 1 血复制【${ITEMS[itemId].name}】。`);
+  const itemId = state.lastItemForSnake.itemId;
+  const itemName = ITEMS[itemId] ? ITEMS[itemId].name : itemId;
+  logState(state, `${p.name}（响尾蛇）消耗 1 血复制【${itemName}】。`);
   clearRattlesnakeOpportunity(state);
-  applyItemEffect(state, p, itemId, { ...(payload || {}), _noSnakeOffer: true });
+
   if (p.hp <= 0) {
     p.alive = false;
     logState(state, `${p.name} 出局！`);
     checkWin(state);
+    return { ok: true };
   }
+
+  // 复制的是卡牌效果：需自行选择目标/位置，不复用原玩家索引
+  if (itemNeedsSnakeCast(itemId)) {
+    state.awaiting = stampAwaitingExpiry(
+      {
+        type: 'snake_cast',
+        actorNr: p.actorNr,
+        name: p.name,
+        itemId,
+        itemName,
+        token: `snakecast-${state.round}-${p.actorNr}-${Date.now()}`
+      },
+      'snake_cast'
+    );
+    logState(state, `${p.name} 请为复制的【${itemName}】自行选择目标/位置（限时 ${state.awaiting.seconds} 秒）。`);
+    return { ok: true };
+  }
+
+  const bad = validateItemUse(state, p, itemId, {});
+  if (bad) {
+    logState(state, `${p.name} 复制【${itemName}】未能生效：${bad}`);
+  } else {
+    applyItemEffect(state, p, itemId, { _noSnakeOffer: true });
+  }
+  if (!state.awaiting) tryStartHandDiscard(state);
+  return { ok: true };
+}
+
+function rattlesnakeCast(state, actorNr, payload) {
+  if (!state.awaiting || state.awaiting.type !== 'snake_cast') {
+    return { ok: false, reason: '当前不是响尾蛇施放窗口' };
+  }
+  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
+    return { ok: false, reason: '不是你的施放窗口' };
+  }
+  const p = getPlayer(state, actorNr);
+  if (!p || !p.alive) return { ok: false, reason: '无法施放' };
+  const itemId = state.awaiting.itemId;
+  const bad = validateItemUse(state, p, itemId, payload || {});
+  if (bad) return { ok: false, reason: bad };
+  state.awaiting = null;
+  applyItemEffect(state, p, itemId, { ...(payload || {}), _noSnakeOffer: true });
+  if (!state.awaiting) tryStartHandDiscard(state);
   return { ok: true };
 }
 
@@ -565,7 +1024,7 @@ function rattlesnakeTimeout(state, token) {
 
 function continueAfterEject(state) {
   if (!state.awaiting || state.awaiting.type !== 'eject_anim') {
-    return { ok: false, reason: '无需确认退弹' };
+    return { ok: true, reason: '已结算' };
   }
   const { bullet, remaining, actorNr, offerSnake } = state.awaiting;
   const player = getPlayer(state, actorNr);
@@ -574,16 +1033,18 @@ function continueAfterEject(state) {
   logState(state, `退弹：弃置【${bulletLabel(bullet)}】。剩余 ${remaining}。`);
   if (remaining === 0) {
     logState(state, '弹药打空，本轮结束。');
+    markNextRoundResume(state);
     startRound(state);
     return { ok: true };
   }
   if (offerSnake && player) offerRattlesnake(state, player, 'eject', {});
+  if (!state.awaiting) tryStartHandDiscard(state);
   return { ok: true };
 }
 
 function continueAfterPainkillerDice(state) {
   if (!state.awaiting || state.awaiting.type !== 'painkiller_dice') {
-    return { ok: false, reason: '无需确认骰子' };
+    return { ok: true, reason: '已结算' };
   }
   const { roll, actorNr, offerSnake } = state.awaiting;
   const player = getPlayer(state, actorNr);
@@ -591,21 +1052,23 @@ function continueAfterPainkillerDice(state) {
   if (!player) return { ok: false, reason: '玩家不存在' };
 
   logState(state, `止痛药掷出 ${roll}（${roll % 2 === 1 ? '奇数' : '偶数'}）。`);
-  if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：');
+  if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：', { chain: false });
   else heal(state, player, 2);
 
   if (offerSnake) offerRattlesnake(state, player, 'painkiller', {});
+  if (!state.awaiting) tryStartHandDiscard(state);
   return { ok: true };
 }
 
 function continueAfterItemFx(state) {
   if (!state.awaiting || state.awaiting.type !== 'item_fx') {
-    return { ok: false, reason: '无需确认道具动画' };
+    return { ok: true, reason: '已结算' };
   }
   const { itemId, actorNr, offerSnake, snakePayload } = state.awaiting;
   const player = getPlayer(state, actorNr);
   state.awaiting = null;
   if (offerSnake && player) offerRattlesnake(state, player, itemId, snakePayload || {});
+  if (!state.awaiting) tryStartHandDiscard(state);
   return { ok: true };
 }
 
@@ -613,20 +1076,23 @@ function startItemFx(state, player, itemId, payload, visual) {
   const safePayload = Object.assign({}, payload || {});
   delete safePayload._noSnakeOffer;
   const meta = ITEMS[itemId] || {};
-  state.awaiting = Object.assign(
-    {
-      type: 'item_fx',
-      itemId,
-      itemName: meta.name || itemId,
-      itemArt: meta.art || null,
-      itemGlyph: meta.glyph || '✦',
-      actorNr: player.actorNr,
-      name: player.name,
-      token: `fx-${itemId}-${state.round}-${Date.now()}`,
-      offerSnake: !(payload && payload._noSnakeOffer),
-      snakePayload: safePayload
-    },
-    visual || {}
+  state.awaiting = stampAwaitingExpiry(
+    Object.assign(
+      {
+        type: 'item_fx',
+        itemId,
+        itemName: meta.name || itemId,
+        itemArt: meta.art || null,
+        itemGlyph: meta.glyph || '✦',
+        actorNr: player.actorNr,
+        name: player.name,
+        token: `fx-${itemId}-${state.round}-${Date.now()}`,
+        offerSnake: !(payload && payload._noSnakeOffer),
+        snakePayload: safePayload
+      },
+      visual || {}
+    ),
+    'item_fx'
   );
 }
 
@@ -647,19 +1113,22 @@ function applyItemEffect(state, player, itemId, payload) {
     case 'painkiller': {
       const roll = 1 + Math.floor(Math.random() * 6);
       const meta = ITEMS.painkiller || {};
-      state.awaiting = {
-        type: 'painkiller_dice',
-        itemId: 'painkiller',
-        itemName: meta.name || '止痛药',
-        itemArt: meta.art || null,
-        actorNr: player.actorNr,
-        name: player.name,
-        targetActorNr: player.actorNr,
-        targetName: player.name,
-        roll,
-        token: `pk-${state.round}-${player.actorNr}-${Date.now()}`,
-        offerSnake: !payload._noSnakeOffer
-      };
+      state.awaiting = stampAwaitingExpiry(
+        {
+          type: 'painkiller_dice',
+          itemId: 'painkiller',
+          itemName: meta.name || '止痛药',
+          itemArt: meta.art || null,
+          actorNr: player.actorNr,
+          name: player.name,
+          targetActorNr: player.actorNr,
+          targetName: player.name,
+          roll,
+          token: `pk-${state.round}-${player.actorNr}-${Date.now()}`,
+          offerSnake: !payload._noSnakeOffer
+        },
+        'painkiller_dice'
+      );
       logState(state, `${player.name} 使用止痛药，投掷六面骰…`);
       break;
     }
@@ -676,18 +1145,21 @@ function applyItemEffect(state, player, itemId, payload) {
       if (state.magazine.length) {
         const b = state.magazine.pop();
         const meta = ITEMS.eject || {};
-        state.awaiting = {
-          type: 'eject_anim',
-          itemId: 'eject',
-          itemName: meta.name || '退弹',
-          itemArt: meta.art || null,
-          actorNr: player.actorNr,
-          name: player.name,
-          bullet: b,
-          remaining: state.magazine.length,
-          token: `ej-${state.round}-${player.actorNr}-${Date.now()}`,
-          offerSnake: !payload._noSnakeOffer
-        };
+        state.awaiting = stampAwaitingExpiry(
+          {
+            type: 'eject_anim',
+            itemId: 'eject',
+            itemName: meta.name || '退弹',
+            itemArt: meta.art || null,
+            actorNr: player.actorNr,
+            name: player.name,
+            bullet: b,
+            remaining: state.magazine.length,
+            token: `ej-${state.round}-${player.actorNr}-${Date.now()}`,
+            offerSnake: !payload._noSnakeOffer
+          },
+          'eject_anim'
+        );
         logState(state, `${player.name} 退弹：弃置弹药中…`);
       }
       break;
@@ -753,17 +1225,19 @@ function applyItemEffect(state, player, itemId, payload) {
     }
     case 'double_arrow': {
       if (payload.unlock) {
-        state.effects.linked = [];
+        state.effects.linkedPairs = [];
         logState(state, '连锁已解除。');
         startItemFx(state, player, itemId, payload, { unlock: true, linkNames: [] });
       } else {
         const targets = (payload.targets || []).map((nr) => getPlayer(state, nr)).filter((p) => p && p.alive);
-        state.effects.linked = targets.map((p) => p.actorNr);
+        const ids = [...new Set(targets.map((p) => p.actorNr))].slice(0, 2);
+        dissolveConflictingLinks(state, ids);
+        state.effects.linkedPairs.push(ids);
         logState(state, `连锁目标：${targets.map((p) => p.name).join('、') || '无'}。`);
         startItemFx(state, player, itemId, payload, {
           unlock: false,
           linkNames: targets.map((p) => p.name),
-          linkActors: targets.map((p) => p.actorNr)
+          linkActors: ids
         });
       }
       break;
@@ -798,26 +1272,43 @@ function declareDoubleBarrel(state, actorNr, index1Based, kind) {
   });
   logState(state, `${success ? '己方' : '对手'} 下轮将额外获得双倍道具（+2）。`);
 
-  state.awaiting = {
-    type: 'double_barrel_reveal',
-    actorNr: player.actorNr,
-    name: player.name,
-    index: index1Based,
-    declared: kind,
-    actual,
-    success,
-    gainerSide: success ? 'ally' : 'foe',
-    gainers: gainers.map((p) => ({ actorNr: p.actorNr, name: p.name })),
-    magSize: state.magazine.length,
-    token: `dbr-${state.round}-${player.actorNr}-${Date.now()}`
-  };
+  state.awaiting = stampAwaitingExpiry(
+    {
+      type: 'double_barrel_reveal',
+      actorNr: player.actorNr,
+      name: player.name,
+      index: index1Based,
+      declared: kind,
+      actual,
+      success,
+      gainerSide: success ? 'ally' : 'foe',
+      gainers: gainers.map((p) => ({ actorNr: p.actorNr, name: p.name })),
+      magSize: state.magazine.length,
+      token: `dbr-${state.round}-${player.actorNr}-${Date.now()}`
+    },
+    'double_barrel_reveal'
+  );
   return { ok: true };
 }
 
 function continueAfterDoubleBarrelReveal(state) {
   if (!state.awaiting || state.awaiting.type !== 'double_barrel_reveal') {
-    return { ok: false, reason: '无需确认双管公示' };
+    return { ok: true, reason: '已结算' };
   }
+  state.awaiting = null;
+  beginTurns(state);
+  return { ok: true };
+}
+
+function skipDoubleBarrel(state, actorNr) {
+  if (!state.awaiting || state.awaiting.type !== 'double_barrel') {
+    return { ok: false, reason: '无需声明' };
+  }
+  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
+    return { ok: false, reason: '不是双管玩家' };
+  }
+  const player = getPlayer(state, actorNr);
+  logState(state, `${player ? player.name : '#' + actorNr}（双管）选择本轮不声明。`);
   state.awaiting = null;
   beginTurns(state);
   return { ok: true };
@@ -832,14 +1323,42 @@ function useIronRose(state, actorNr, handIndexes) {
   if (!Array.isArray(handIndexes) || handIndexes.length !== 2) return { ok: false, reason: '需弃两张' };
   const idxs = handIndexes.slice().sort((a, b) => b - a);
   if (idxs[0] === idxs[1] || idxs.some((i) => i < 0 || i >= p.hand.length)) return { ok: false, reason: '手牌无效' };
+  const discarded = idxs.map((i) => p.hand[i]);
   idxs.forEach((i) => {
     state.itemDiscard.push(p.hand.splice(i, 1)[0]);
   });
   heal(state, p, 1);
+  const healTargets = [p];
   alivePlayers(state)
     .filter((x) => x.team === p.team && x.actorNr !== p.actorNr)
-    .forEach((ally) => heal(state, ally, 1));
+    .forEach((ally) => {
+      heal(state, ally, 1);
+      healTargets.push(ally);
+    });
   logState(state, `${p.name} 发动铁玫瑰。`);
+  const role = ROLES.iron_rose || {};
+  state.awaiting = stampAwaitingExpiry(
+    {
+      type: 'item_fx',
+      itemId: 'iron_rose',
+      itemName: '铁玫瑰',
+      itemArt: role.art || null,
+      itemGlyph: role.glyph || '薔',
+      actorNr: p.actorNr,
+      name: p.name,
+      token: `fx-iron_rose-${state.round}-${Date.now()}`,
+      offerSnake: false,
+      snakePayload: {},
+      discarded: discarded.slice(),
+      healNames: healTargets.map((t) => t.name),
+      healActors: healTargets.map((t) => t.actorNr),
+      targetActorNr: p.actorNr,
+      targetName: p.name,
+      linkActors: healTargets.map((t) => t.actorNr),
+      linkNames: healTargets.map((t) => t.name)
+    },
+    'item_fx'
+  );
   return { ok: true };
 }
 
@@ -896,7 +1415,8 @@ function publicView(state, viewerActorNr) {
     effects: {
       reverseNext: state.effects.reverseNext,
       shotgunNext: state.effects.shotgunNext,
-      linked: state.effects.linked.slice(),
+      linked: flattenLinked(state),
+      linkedPairs: state.effects.linkedPairs.map((pair) => pair.slice()),
       doubleItemBonus: state.effects.doubleItemBonus
     },
     awaiting: viewAwaiting(state, viewerActorNr),
@@ -930,6 +1450,20 @@ function publicView(state, viewerActorNr) {
 }
 
 function handleAction(state, actorNr, action) {
+  // 动画/操作超时兜底：不依赖操作者是否还在线
+  if (resolveExpiredAwaiting(state)) {
+    // 若本次就是对应的 done / 超时心跳，当作已处理成功
+    const doneTypes = {
+      ammo_draw_done: 'ammo_draw',
+      first_player_done: 'first_player_spin',
+      painkiller_dice_done: 'painkiller_dice',
+      eject_done: 'eject_anim',
+      item_fx_done: 'item_fx',
+      double_barrel_done: 'double_barrel_reveal',
+      awaiting_timeout: true
+    };
+    if (doneTypes[action.type]) return { ok: true };
+  }
   switch (action.type) {
     case 'shoot':
       return shoot(state, actorNr, action.targetActorNr, action.nightOwlTargetNr);
@@ -937,8 +1471,14 @@ function handleAction(state, actorNr, action) {
       return useItem(state, actorNr, action.itemIndex, action.payload);
     case 'double_barrel':
       return declareDoubleBarrel(state, actorNr, action.index, action.kind);
+    case 'double_barrel_skip':
+      return skipDoubleBarrel(state, actorNr);
     case 'double_barrel_done':
       return continueAfterDoubleBarrelReveal(state);
+    case 'gunpowder_peek':
+      return resolveGunpowderPeek(state, actorNr, !!action.accept);
+    case 'discard_hand':
+      return discardHandCards(state, actorNr, action.indexes);
     case 'ammo_draw_done':
       return continueAfterAmmoDraw(state);
     case 'first_player_done':
@@ -953,10 +1493,14 @@ function handleAction(state, actorNr, action) {
       return useIronRose(state, actorNr, action.handIndexes);
     case 'rattlesnake_copy':
       return rattlesnakeCopy(state, actorNr);
+    case 'rattlesnake_cast':
+      return rattlesnakeCast(state, actorNr, action.payload || {});
     case 'rattlesnake_pass':
       return rattlesnakePass(state, actorNr);
     case 'rattlesnake_timeout':
       return rattlesnakeTimeout(state, action.token);
+    case 'awaiting_timeout':
+      return { ok: false, reason: '尚未超时' };
     default:
       return { ok: false, reason: '未知动作' };
   }
