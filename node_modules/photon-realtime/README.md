@@ -1,0 +1,55 @@
+# Photon Realtime Client
+
+The Photon Javascript library provides a simple to use framework to access the Photon Server and the Photon Cloud.
+Cross platform communication is possible, so Javascript clients can interact with DotNet or native clients.
+The SDK supports 2 APIs.
+
+
+# Realtime (LoadBalancing) API
+Allows to access Photon Cloud Realtime service: https://doc.photonengine.com/en-us/realtime/current/getting-started/realtime-intro
+
+## Usage
+Create an application in https://dashboard.photonengine.com/ and replace "app-id" with your app id.
+
+```js
+const Photon = require("photon-realtime")
+
+const LBC = Photon.LoadBalancing.LoadBalancingClient;
+const lbc = new LBC(Photon.ConnectionProtocol.Wss, "app-id", "1.0");
+
+lbc.onStateChange = function (state) {
+    console.log("State:", LBC.StateToName(state));
+    switch (state) {
+        case LBC.State.JoinedLobby:
+            this.joinRoom("hello", {createIfNotExists: true});
+            break;
+        case LBC.State.Joined:
+            lbc.raiseEvent(
+                42, // event code
+                "Hello, World!", // payload: primitive, array or object
+                { receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All } // send also to the sender
+            );
+            break;
+    }
+};
+
+lbc.onEvent = function (code, data) {
+    console.log("Event recieved:", code, data);
+}
+	
+Photon.setOnLoad(() => {
+    lbc.connectToRegionMaster("EU");
+});
+```
+
+# Chat API
+Allows to access Photon Chat service: https://doc.photonengine.com/en-us/chat/current/getting-started/chat-intro
+
+# Documentation
+https://doc-api.photonengine.com/en/javascript/current/index.html
+
+# Contact
+To get in touch with other Photon developers and our engineers, Join our Discord Server https://dashboard.photonengine.com/account/profile
+Keep yourself up to date following Exit Games on Twitter http://twitter.com/exitgames and our blog http://blog.photonengine.com
+
+(C) Exit Games GmbH 2025

@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>恶魔转盘</title>
+  <link rel="stylesheet" href="./css/style.css">
+  <script src="./lib/Photon-Javascript_SDK.js"></script>
+  <script src="./js/cards.js"></script>
+  <script src="./js/game.js"></script>
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">DEVIL ROULETTE</div>
+      <div class="meta" id="status">正在连接服务器...</div>
+    </div>
+    <div class="topbar-controls">
+      <details class="log-popover" id="logDrawer">
+        <summary>对局日志</summary>
+        <div class="log-popover-panel">
+          <div id="log"></div>
+        </div>
+      </details>
+      <label class="meta">房间 <input id="roomName" value="DevilRoom_101" style="width:120px"></label>
+      <button id="reconnectBtn" type="button">重连</button>
+      <span class="meta" id="roomInfo"></span>
+    </div>
+  </header>
+
+  <section class="lobby-shell" id="lobbyPanel">
+    <h2>等待开局</h2>
+    <p class="meta">四人组队：上下为队友、左右为对手（红蓝分队）。也可先点「模拟对局」单人预览。</p>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <select id="modeSelect">
+        <option value="team" selected>组队 2v2（上下队友 · 红蓝）</option>
+        <option value="ffa">混战</option>
+      </select>
+      <select id="simCountSelect" title="模拟人数">
+        <option value="2">模拟 2 人</option>
+        <option value="3">模拟 3 人</option>
+        <option value="4" selected>模拟 4 人</option>
+      </select>
+      <button id="startBtn" class="primary" type="button" disabled>开始游戏</button>
+      <button id="simBtn" class="primary" type="button">模拟对局</button>
+      <button id="exitSimBtn" type="button" style="display:none">退出模拟</button>
+    </div>
+  </section>
+
+  <section class="table-wrap" id="gamePanel">
+    <div class="round-banner" id="roundInfo"></div>
+
+    <div class="board-arena" id="boardArena">
+      <div class="seat-slot seat-top" id="seatTop"></div>
+      <div class="seat-slot seat-left" id="seatLeft"></div>
+      <div class="felt">
+        <div class="loadout-row" id="loadoutRow"></div>
+        <div class="cylinder" id="cylinder"></div>
+        <div class="felt-status" id="feltStatus">弹药区</div>
+        <div class="effect-pills" id="effectPills"></div>
+      </div>
+      <div class="seat-slot seat-right" id="seatRight"></div>
+      <div class="seat-slot seat-bottom" id="seatBottom"></div>
+    </div>
+
+    <!-- 非四人布局时，对手仍可显示在上方条 -->
+    <div class="opponents" id="opponents"></div>
+
+    <div class="me-zone">
+      <div class="me-seat-col" id="mySeat"></div>
+      <div class="hand-block">
+        <div class="hand-label">我的道具手牌（每轮开局抽 2 张，点选后可使用）</div>
+        <div class="hand-fan" id="hand"></div>
+        <div class="private-toast" id="privateInfo"></div>
+      </div>
+    </div>
+
+    <div class="actions-dock" id="actionBar">
+      <button id="useItemBtn" type="button" disabled>使用道具</button>
+      <button id="ironRoseBtn" type="button" disabled style="display:none">铁玫瑰</button>
+      <span id="snakeBar" style="display:none;align-items:center;gap:8px">
+        <span class="meta" id="snakeHint"></span>
+        <button id="snakeBtn" class="primary" type="button">复制（-1血）</button>
+        <button id="snakePassBtn" type="button">放弃</button>
+      </span>
+      <span id="awaitBar" style="display:none;align-items:center;gap:8px">
+        <span class="meta" id="awaitHint"></span>
+        <input id="dbIndex" type="number" min="1" value="1" style="width:56px">
+        <select id="dbKind">
+          <option value="live">实弹</option>
+          <option value="blank">空弹</option>
+        </select>
+        <button id="dbBtn" class="primary" type="button">声明</button>
+      </span>
+    </div>
+  </section>
+
+  <div class="reveal-overlay" id="revealOverlay">
+    <div class="reveal-title">角色揭示</div>
+    <div class="reveal-row" id="revealRow"></div>
+    <button class="primary" type="button" id="revealCloseBtn">进入对局</button>
+  </div>
+
+  <div class="first-spin-overlay" id="firstSpinOverlay">
+    <div class="first-spin-title">本局先手</div>
+    <div class="first-spin-sub">转轮决定由谁开始本局…</div>
+    <div class="first-spin-card" id="firstSpinCard">
+      <div class="first-spin-name" id="firstSpinName">?</div>
+      <div class="first-spin-role" id="firstSpinRole"></div>
+    </div>
+    <div class="first-spin-result" id="firstSpinResult"></div>
+  </div>
+
+  <div class="ammo-draw-overlay" id="ammoDrawOverlay">
+    <div class="ammo-draw-title">弹药数量牌</div>
+    <div class="ammo-draw-sub" id="ammoDrawSub">第 1 轮装弹…</div>
+    <div class="ammo-draw-row">
+      <div class="ammo-draw-tile live" id="ammoLiveTile">
+        <div class="ammo-draw-label">实弹</div>
+        <div class="ammo-draw-num" id="ammoLiveNum">?</div>
+      </div>
+      <div class="ammo-draw-plus">+</div>
+      <div class="ammo-draw-tile blank" id="ammoBlankTile">
+        <div class="ammo-draw-label">空弹</div>
+        <div class="ammo-draw-num" id="ammoBlankNum">?</div>
+      </div>
+      <div class="ammo-draw-special" id="ammoSpecialTile" hidden>
+        <div class="ammo-draw-plus">+</div>
+        <div class="ammo-draw-tile special">
+          <div class="ammo-draw-label">特殊</div>
+          <div class="ammo-draw-num">1</div>
+        </div>
+      </div>
+    </div>
+    <div class="ammo-draw-result" id="ammoDrawResult"></div>
+  </div>
+
+  <!-- 固定层提示：不占文档流，避免悬停重排 -->
+  <div class="skill-tip" id="skillTip" aria-live="polite"></div>
+
+  <script>
+    const APP_ID = '92735fab-ee4f-41f5-8af0-303522dfc972';
+    const APP_VERSION = '1.0';
+    const EVT_ACTION = 30;
+    const EVT_STATE = 31;
+    const EVT_FULL = 33;   // 完整权威状态备份（房主迁移用）
+    const EVT_HELLO = 34;  // 新人进房请求同步
+
+    const ROOM_OPTS = {
+      maxPlayers: 4,
+      // 空房保留 5 分钟，避免房主刷新瞬间房间被拆
+      emptyRoomLiveTime: 300000,
+      // 断线玩家保留 3 分钟，便于同 UserId 重连回原座位
+      playerTTL: 180000
+    };
+
+    const statusDiv = document.getElementById('status');
+    const logBox = document.getElementById('log');
+    const LBC = Photon.LoadBalancing.LoadBalancingClient;
+
+    let client = null;
+    let gameState = null;
+    let fullStateBackup = null;
+    let view = null;
+    let selectedHand = [];
+    let selectedTarget = null;
+    let myActorNr = 0;
+    let lastRevealKey = '';
+    let revealedOnce = false;
+    let preferredRoom = 'DevilRoom_101';
+    let offlineSim = false;
+    let botTimer = null;
+    let lastSpinToken = '';
+    let spinAnimTimer = null;
+    let lastAmmoToken = '';
+    let ammoAnimTimer = null;
+    let snakeTimer = null;
+    let snakeTimerToken = '';
+    let snakeCountdownTimer = null;
+
+    function getStableUserId() {
+      const key = 'devil_roulette_uid';
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem(key, id);
+      }
+      return id;
+    }
+
+    function gameLog(msg) {
+      logBox.innerHTML += `<div>${msg}</div>`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function syncLogFromView() {
+      if (!view || !view.publicLog) return;
+      logBox.innerHTML = view.publicLog.map((m) => `<div>${m}</div>`).join('');
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function roomActors() {
+      const map = client.myRoomActors() || {};
+      return Object.keys(map).map((k) => map[k]);
+    }
+
+    /** 以 Photon MasterClient 为准；模拟模式始终本地权威 */
+    function isHost() {
+      if (offlineSim) return true;
+      if (!client || !client.isJoinedToRoom()) return false;
+      return client.myActor().actorNr === client.myRoomMasterActorNr();
+    }
+
+    function clearBotTimer() {
+      if (botTimer) {
+        clearTimeout(botTimer);
+        botTimer = null;
+      }
+    }
+
+    function refreshLocalView() {
+      if (!gameState) return;
+      applyView(publicView(gameState, myActorNr));
+      scheduleBotIfNeeded();
+    }
+
+    function clearSnakeTimers() {
+      if (snakeTimer) {
+        clearTimeout(snakeTimer);
+        snakeTimer = null;
+      }
+      if (snakeCountdownTimer) {
+        clearInterval(snakeCountdownTimer);
+        snakeCountdownTimer = null;
+      }
+      snakeTimerToken = '';
+    }
+
+    function armRattlesnakeWindow(awaiting) {
+      if (!awaiting || awaiting.type !== 'rattlesnake') {
+        clearSnakeTimers();
+        return;
+      }
+      if (snakeTimerToken === awaiting.token) return;
+      clearSnakeTimers();
+      snakeTimerToken = awaiting.token;
+
+      const updateHint = () => {
+        const hint = document.getElementById('snakeHint');
+        if (!hint || !view || !view.awaiting || view.awaiting.token !== awaiting.token) return;
+        const leftMs = Math.max(0, (view.awaiting.expiresAt || 0) - Date.now());
+        const sec = Math.ceil(leftMs / 1000);
+        const name = view.awaiting.itemName || '道具';
+        const mine = view.awaiting.actorNr === myActorNr;
+        hint.textContent = mine
+          ? `响尾蛇：复制【${name}】？ 剩余 ${sec}s`
+          : `响尾蛇 #${view.awaiting.actorNr} 抉择中：【${name}】 ${sec}s`;
+      };
+      updateHint();
+      snakeCountdownTimer = setInterval(updateHint, 200);
+
+      // 房主或本人负责超时结算，避免卡住
+      if (isHost() || awaiting.actorNr === myActorNr) {
+        const ms = Math.max(200, (awaiting.expiresAt || Date.now() + 5000) - Date.now());
+        snakeTimer = setTimeout(() => {
+          snakeTimer = null;
+          if (!view || !view.awaiting || view.awaiting.token !== awaiting.token) return;
+          sendAction({ type: 'rattlesnake_timeout', token: awaiting.token });
+        }, ms);
+      }
+    }
+
+    function scheduleBotIfNeeded() {
+      clearBotTimer();
+      if (!offlineSim || !gameState || gameState.phase !== 'playing') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'first_player_spin') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'ammo_draw') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
+        if (gameState.awaiting.actorNr === myActorNr) return; // 本人手动抉择
+        botTimer = setTimeout(() => {
+          botTimer = null;
+          runBotTurn();
+        }, 700);
+        return;
+      }
+      const cur = gameState.turnOrder[gameState.currentTurn];
+      if (cur === myActorNr) return;
+      if (gameState.awaiting && gameState.awaiting.actorNr === myActorNr) return;
+
+      botTimer = setTimeout(() => {
+        botTimer = null;
+        runBotTurn();
+      }, 900);
+    }
+
+    function runBotTurn() {
+      if (!offlineSim || !gameState || gameState.phase !== 'playing') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'first_player_spin') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'ammo_draw') return;
+
+      // 响尾蛇窗口（机器人）
+      if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
+        const a = gameState.awaiting;
+        if (a.actorNr === myActorNr) return;
+        const bot = gameState.players.find((p) => p.actorNr === a.actorNr);
+        const willCopy = bot && bot.hp > 1 && Math.random() < 0.45;
+        handleAction(gameState, a.actorNr, {
+          type: willCopy ? 'rattlesnake_copy' : 'rattlesnake_pass'
+        });
+        refreshLocalView();
+        return;
+      }
+
+      // 双管声明
+      if (gameState.awaiting && gameState.awaiting.type === 'double_barrel') {
+        const a = gameState.awaiting;
+        handleAction(gameState, a.actorNr, {
+          type: 'double_barrel',
+          index: 1 + Math.floor(Math.random() * a.magSize),
+          kind: Math.random() < 0.5 ? 'live' : 'blank'
+        });
+        refreshLocalView();
+        return;
+      }
+
+      const curNr = gameState.turnOrder[gameState.currentTurn];
+      if (curNr === myActorNr) return;
+      const bot = gameState.players.find((p) => p.actorNr === curNr);
+      if (!bot || !bot.alive) {
+        refreshLocalView();
+        return;
+      }
+
+      // 偶尔用一张简单道具
+      if (bot.hand.length && Math.random() < 0.35) {
+        const idx = Math.floor(Math.random() * bot.hand.length);
+        const id = bot.hand[idx];
+        const payload = {};
+        if (id === 'bind') {
+          const foes = gameState.players.filter((p) => p.alive && p.actorNr !== bot.actorNr);
+          if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
+        } else if (id === 'inspect' || id === 'peek_top') {
+          payload.index = 0;
+        } else if (id === 'swap' && gameState.magazine.length >= 2) {
+          payload.i = 0;
+          payload.j = 1;
+        } else if (id === 'double_arrow') {
+          const foes = gameState.players.filter((p) => p.alive && p.actorNr !== bot.actorNr);
+          payload.targets = foes.slice(0, 1).map((p) => p.actorNr);
+        }
+        // 跳过需要复杂选择且可能无效的牌，直接开枪更稳
+        if (['bind', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'reverse', 'peek_top'].includes(id)) {
+          handleAction(gameState, curNr, { type: 'use_item', itemIndex: idx, payload });
+          refreshLocalView();
+          return;
+        }
+      }
+
+      const foes = gameState.players.filter((p) => p.alive && p.actorNr !== bot.actorNr);
+      const shootSelf = Math.random() < 0.45 || !foes.length;
+      const target = shootSelf ? bot.actorNr : foes[Math.floor(Math.random() * foes.length)].actorNr;
+      let nightOwlTargetNr;
+      if (shootSelf && bot.role === 'night_owl' && bot.hp <= 4 && foes.length) {
+        nightOwlTargetNr = foes[0].actorNr;
+      }
+      handleAction(gameState, curNr, {
+        type: 'shoot',
+        targetActorNr: target,
+        nightOwlTargetNr
+      });
+      refreshLocalView();
+    }
+
+    function startOfflineSim() {
+      clearBotTimer();
+      offlineSim = true;
+      let n = Number(document.getElementById('simCountSelect').value) || 4;
+      n = Math.max(2, Math.min(4, n));
+      let mode = document.getElementById('modeSelect').value;
+      if (mode === 'team' && n !== 4) {
+        mode = 'ffa';
+        gameLog('模拟人数不是 4，已用混战模式');
+      }
+
+      myActorNr = 1;
+      const actors = [];
+      for (let i = 1; i <= n; i++) {
+        actors.push({ actorNr: i, name: i === 1 ? '我（模拟）' : `电脑${i}` });
+      }
+
+      gameState = createEmptyState();
+      revealedOnce = false;
+      lastRevealKey = '';
+      lastSpinToken = '';
+      lastAmmoToken = '';
+      selectedHand = [];
+      selectedTarget = null;
+      initPlayers(gameState, actors, mode);
+      if (mode === 'team') {
+        gameState.players.forEach((p, i) => { p.team = i % 2; });
+        gameState.turnOrder = actors.map((a) => a.actorNr);
+        const fp = gameState.awaiting && (
+          gameState.awaiting.type === 'first_player_spin'
+            ? gameState.awaiting.actorNr
+            : (gameState.awaiting.type === 'ammo_draw' && gameState.awaiting.firstPlayer
+              ? gameState.awaiting.firstPlayer.actorNr
+              : null)
+        );
+        if (fp) {
+          const i = gameState.turnOrder.indexOf(fp);
+          if (i > 0) {
+            gameState.turnOrder = gameState.turnOrder.slice(i).concat(gameState.turnOrder.slice(0, i));
+          }
+          gameState.currentTurn = 0;
+        }
+      }
+
+      statusDiv.textContent = `模拟对局中（${n}人 · ${mode === 'team' ? '组队' : '混战'}）`;
+      document.getElementById('exitSimBtn').style.display = '';
+      document.getElementById('roomInfo').textContent = '本地模拟 · 无需联机';
+      gameLog('—— 进入模拟对局：你是玩家#1，其余由电脑行动 ——');
+      refreshLocalView();
+    }
+
+    function exitOfflineSim() {
+      clearBotTimer();
+      if (spinAnimTimer) {
+        clearInterval(spinAnimTimer);
+        spinAnimTimer = null;
+      }
+      if (ammoAnimTimer) {
+        clearInterval(ammoAnimTimer);
+        ammoAnimTimer = null;
+      }
+      lastSpinToken = '';
+      lastAmmoToken = '';
+      offlineSim = false;
+      gameState = null;
+      fullStateBackup = null;
+      view = { phase: 'lobby', players: [], turnOrder: [], currentTurn: 0, publicLog: [] };
+      revealedOnce = false;
+      lastRevealKey = '';
+      lastSpinToken = '';
+      document.getElementById('exitSimBtn').style.display = 'none';
+      document.getElementById('revealOverlay').classList.remove('show');
+      document.getElementById('firstSpinOverlay').classList.remove('show', 'landed');
+      statusDiv.textContent = client && client.isJoinedToRoom()
+        ? `已进入房间 · Master #${client.myRoomMasterActorNr()}`
+        : '已退出模拟';
+      document.getElementById('roomInfo').textContent = '';
+      gameLog('—— 已退出模拟对局 ——');
+      render();
+    }
+
+    function slimStateForPersist(state) {
+      if (!state) return null;
+      const copy = JSON.parse(JSON.stringify(state));
+      if (copy.publicLog && copy.publicLog.length > 25) {
+        copy.publicLog = copy.publicLog.slice(-25);
+      }
+      return copy;
+    }
+
+    function persistAndBroadcast() {
+      if (!gameState || !isHost()) return;
+
+      if (offlineSim) {
+        refreshLocalView();
+        return;
+      }
+
+      fullStateBackup = slimStateForPersist(gameState);
+
+      // 房间属性备份：房主刷新后空房仍在时，可从属性恢复
+      try {
+        const payload = JSON.stringify(fullStateBackup);
+        if (payload.length < 12000) {
+          client.myRoom().setCustomProperties({ gs: payload });
+        }
+      } catch (e) {
+        console.warn('persist room props failed', e);
+      }
+
+      // 发给所有人做内存备份，便于 Master 迁移
+      client.raiseEvent(EVT_FULL, fullStateBackup, {
+        receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
+      });
+
+      roomActors().forEach((actor) => {
+        client.raiseEvent(EVT_STATE, publicView(gameState, actor.actorNr), {
+          targetActors: [actor.actorNr]
+        });
+      });
+      applyView(publicView(gameState, myActorNr));
+    }
+
+    function broadcastState() {
+      persistAndBroadcast();
+    }
+
+    function tryBecomeHostWithBackup(reason) {
+      if (!isHost()) return false;
+      if (gameState) return true;
+      if (fullStateBackup) {
+        gameState = JSON.parse(JSON.stringify(fullStateBackup));
+        gameLog(`已成为房主，已从备份恢复对局（${reason}）`);
+        persistAndBroadcast();
+        return true;
+      }
+      // 尝试房间属性
+      try {
+        const props = client.myRoom().getCustomProperties() || {};
+        if (props.gs) {
+          gameState = JSON.parse(props.gs);
+          fullStateBackup = slimStateForPersist(gameState);
+          gameLog(`已成为房主，已从房间存档恢复对局（${reason}）`);
+          persistAndBroadcast();
+          return true;
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+      return false;
+    }
+
+    function requestSync() {
+      client.raiseEvent(EVT_HELLO, { actorNr: myActorNr }, {
+        receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
+      });
+    }
+
+    function applyView(v) {
+      const wasLobby = !view || view.phase === 'lobby';
+      view = v;
+      if (v.phase === 'playing' || v.phase === 'ended') {
+        maybeShowReveal(wasLobby);
+      }
+      render();
+      syncLogFromView();
+      maybeShowAmmoDraw();
+      maybeShowFirstSpin();
+    }
+
+    function joinPreferredRoom(preferRejoin) {
+      preferredRoom = document.getElementById('roomName').value.trim() || 'DevilRoom_101';
+      if (preferRejoin) {
+        gameLog(`尝试重连房间 ${preferredRoom}...`);
+        const ok = client.joinRoom(preferredRoom, { rejoin: true });
+        if (!ok) joinCreateRoom();
+        // 若 rejoin 失败，会在 onOperationResponse 里回退
+        window.__rejoinPending = true;
+        return;
+      }
+      joinCreateRoom();
+    }
+
+    function joinCreateRoom() {
+      window.__rejoinPending = false;
+      gameLog(`加入/创建房间 ${preferredRoom}（空房保活开启）...`);
+      client.joinRoom(preferredRoom, { createIfNotExists: true }, ROOM_OPTS);
+    }
+
+    function hpPipsHtml(hp, maxHp = 6) {
+      const cur = Math.max(0, Math.min(maxHp, Number(hp) || 0));
+      let html = '<div class="hp-pips" title="血量 ' + cur + '/' + maxHp + '">';
+      for (let i = 0; i < maxHp; i++) {
+        html += `<span class="hp-drop${i < cur ? ' filled' : ' empty'}" aria-hidden="true"></span>`;
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function roleCardHtml(p, opts) {
+      const role = roleMeta(p.role);
+      const big = opts && opts.big;
+      const art = role.art
+        ? `<img class="art-img" src="${role.art}" alt="${role.name}" draggable="false">`
+        : `<span class="art-glyph">${role.glyph}</span>`;
+      return `
+        <div class="role-card${role.art ? ' has-art' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${role.name}">
+          <div class="art">${art}</div>
+          <div class="body">
+            ${hpPipsHtml(p.hp)}
+            <div class="desc">${role.desc || ''}</div>
+          </div>
+          <div class="frame"></div>
+          ${big ? '' : `<div class="hand-count">${p.handCount}张</div>`}
+        </div>`;
+    }
+
+    function showSkillTip(roleId, playerName, anchorEl) {
+      const tip = document.getElementById('skillTip');
+      if (!tip) return;
+      if (!roleId) {
+        tip.classList.remove('show');
+        return;
+      }
+      const role = roleMeta(roleId);
+      tip.innerHTML = `<strong>${playerName || ''} · ${role.name}</strong><span>${role.desc}</span>`;
+      tip.classList.add('show');
+
+      // 先显示再量尺寸，贴在卡牌旁，不挤占布局
+      const pad = 12;
+      const rect = (anchorEl && anchorEl.getBoundingClientRect)
+        ? anchorEl.getBoundingClientRect()
+        : { left: pad, right: pad + 120, top: pad, bottom: pad + 80, width: 120, height: 80 };
+      const tw = tip.offsetWidth || 280;
+      const th = tip.offsetHeight || 80;
+
+      let left = rect.left + rect.width / 2 - tw / 2;
+      let top = rect.bottom + 8;
+      if (top + th > window.innerHeight - pad) {
+        top = rect.top - th - 8;
+      }
+      left = Math.max(pad, Math.min(left, window.innerWidth - tw - pad));
+      top = Math.max(pad, top);
+
+      tip.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+    }
+
+    function maybeShowReveal(cameFromLobby) {
+      if (!view || !view.players || !view.players.length) return;
+      const key = view.players.map((p) => p.actorNr + ':' + p.role).join('|') + '@' + view.round;
+      if (key === lastRevealKey) return;
+      // 只在开局（或新对局角色刚发下）播一次
+      if (!cameFromLobby && revealedOnce && view.round > 1) return;
+      lastRevealKey = key;
+      revealedOnce = true;
+
+      const row = document.getElementById('revealRow');
+      row.innerHTML = view.players.map((p, i) => {
+        return `
+          <div class="reveal-card" style="animation-delay:${i * 0.12}s">
+            <div class="seat-name" style="text-align:center;margin-bottom:6px">${p.name}</div>
+            <div class="flip-scene">
+              <div class="flip-inner" id="flip-${p.actorNr}">
+                <div class="flip-face">
+                  <div class="card-back">ROLE</div>
+                </div>
+                <div class="flip-face flip-back">
+                  ${roleCardHtml({ ...p, handCount: p.handCount || 0 }, { big: true })}
+                </div>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+
+      document.getElementById('revealOverlay').classList.add('show');
+      setTimeout(() => {
+        view.players.forEach((p, i) => {
+          setTimeout(() => {
+            const el = document.getElementById('flip-' + p.actorNr);
+            if (el) el.classList.add('flipped');
+          }, 400 + i * 180);
+        });
+      }, 280);
+    }
+
+    document.getElementById('revealCloseBtn').onclick = () => {
+      document.getElementById('revealOverlay').classList.remove('show');
+      maybeShowAmmoDraw();
+      maybeShowFirstSpin();
+    };
+
+    function finishAmmoDraw() {
+      if (!isHost()) return;
+      sendAction({ type: 'ammo_draw_done' });
+    }
+
+    function maybeShowAmmoDraw() {
+      const overlay = document.getElementById('ammoDrawOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'ammo_draw') {
+        if (ammoAnimTimer) {
+          clearInterval(ammoAnimTimer);
+          ammoAnimTimer = null;
+        }
+        overlay.classList.remove('show', 'landed', 'phase-blank', 'phase-done');
+        return;
+      }
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (awaiting.token && awaiting.token === lastAmmoToken) {
+        if (!overlay.classList.contains('show')) overlay.classList.add('show');
+        return;
+      }
+      lastAmmoToken = awaiting.token || `ammo-${awaiting.round}`;
+      playAmmoDraw(awaiting);
+    }
+
+    function playAmmoDraw(awaiting) {
+      const overlay = document.getElementById('ammoDrawOverlay');
+      const liveNum = document.getElementById('ammoLiveNum');
+      const blankNum = document.getElementById('ammoBlankNum');
+      const liveTile = document.getElementById('ammoLiveTile');
+      const blankTile = document.getElementById('ammoBlankTile');
+      const specialWrap = document.getElementById('ammoSpecialTile');
+      const resultEl = document.getElementById('ammoDrawResult');
+      const subEl = document.getElementById('ammoDrawSub');
+
+      if (ammoAnimTimer) {
+        clearInterval(ammoAnimTimer);
+        ammoAnimTimer = null;
+      }
+
+      overlay.classList.add('show');
+      overlay.classList.remove('landed', 'phase-blank', 'phase-done');
+      liveTile.classList.add('spinning');
+      blankTile.classList.remove('spinning', 'land');
+      liveTile.classList.remove('land');
+      specialWrap.hidden = true;
+      resultEl.textContent = '';
+      subEl.textContent = `第 ${awaiting.round} 轮 · 抽取实弹数量…`;
+      liveNum.textContent = '?';
+      blankNum.textContent = '?';
+
+      const liveTarget = awaiting.live || 1;
+      const blankTarget = awaiting.blank || 1;
+      const special = awaiting.special || 0;
+      let tick = 0;
+      const liveTicks = 14 + Math.floor(Math.random() * 6);
+      const blankTicks = 14 + Math.floor(Math.random() * 6);
+      let phase = 'live'; // live | blank | done
+
+      ammoAnimTimer = setInterval(() => {
+        tick += 1;
+        if (phase === 'live') {
+          liveNum.textContent = 1 + Math.floor(Math.random() * 6);
+          if (tick >= liveTicks) {
+            liveNum.textContent = liveTarget;
+            liveTile.classList.remove('spinning');
+            liveTile.classList.add('land');
+            phase = 'blank';
+            tick = 0;
+            overlay.classList.add('phase-blank');
+            blankTile.classList.add('spinning');
+            subEl.textContent = `第 ${awaiting.round} 轮 · 抽取空弹数量…`;
+          }
+        } else if (phase === 'blank') {
+          blankNum.textContent = 1 + Math.floor(Math.random() * 6);
+          if (tick >= blankTicks) {
+            blankNum.textContent = blankTarget;
+            blankTile.classList.remove('spinning');
+            blankTile.classList.add('land');
+            phase = 'done';
+            overlay.classList.add('phase-done', 'landed');
+            if (special > 0) {
+              specialWrap.hidden = false;
+              specialWrap.classList.add('pop');
+            }
+            const total = liveTarget + blankTarget + special;
+            resultEl.textContent = `本轮装入 ${liveTarget} 实弹 + ${blankTarget} 空弹${special ? ' + 特殊弹' : ''}，共 ${total} 发`;
+            subEl.textContent = `第 ${awaiting.round} 轮装弹完成`;
+            clearInterval(ammoAnimTimer);
+            ammoAnimTimer = null;
+            setTimeout(() => {
+              overlay.classList.remove('show', 'landed', 'phase-blank', 'phase-done');
+              liveTile.classList.remove('land');
+              blankTile.classList.remove('land');
+              specialWrap.classList.remove('pop');
+              finishAmmoDraw();
+            }, 1100);
+          }
+        }
+      }, 85);
+    }
+
+    function finishFirstPlayerSpin() {
+      if (!isHost()) return;
+      sendAction({ type: 'first_player_done' });
+    }
+
+    function maybeShowFirstSpin() {
+      const overlay = document.getElementById('firstSpinOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'first_player_spin') {
+        overlay.classList.remove('show', 'landed');
+        return;
+      }
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (awaiting.token && awaiting.token === lastSpinToken) {
+        if (!overlay.classList.contains('show')) overlay.classList.add('show');
+        return;
+      }
+      lastSpinToken = awaiting.token || `${awaiting.round}-${awaiting.actorNr}`;
+      playFirstPlayerSpin(awaiting);
+    }
+
+    function playFirstPlayerSpin(awaiting) {
+      const overlay = document.getElementById('firstSpinOverlay');
+      const nameEl = document.getElementById('firstSpinName');
+      const roleEl = document.getElementById('firstSpinRole');
+      const resultEl = document.getElementById('firstSpinResult');
+      const cardEl = document.getElementById('firstSpinCard');
+      const candidates = awaiting.candidates || [];
+      if (!candidates.length) {
+        finishFirstPlayerSpin();
+        return;
+      }
+
+      if (spinAnimTimer) {
+        clearInterval(spinAnimTimer);
+        spinAnimTimer = null;
+      }
+
+      overlay.classList.add('show');
+      overlay.classList.remove('landed');
+      resultEl.textContent = '';
+      cardEl.classList.add('spinning');
+
+      let i = 0;
+      const winner = candidates.find((c) => c.actorNr === awaiting.actorNr) || candidates[0];
+      const ticks = 18 + Math.floor(Math.random() * 8);
+      let tick = 0;
+
+      spinAnimTimer = setInterval(() => {
+        const c = candidates[i % candidates.length];
+        nameEl.textContent = c.name;
+        roleEl.textContent = c.roleName || '';
+        const meta = roleMeta(c.role);
+        cardEl.style.setProperty('--hue', meta.hue || 30);
+        if (meta.art) {
+          cardEl.style.backgroundImage = `linear-gradient(180deg, rgba(8,6,4,0.15), rgba(8,6,4,0.72)), url('${meta.art}')`;
+          cardEl.classList.add('has-art');
+        } else {
+          cardEl.style.backgroundImage = '';
+          cardEl.classList.remove('has-art');
+        }
+        i += 1;
+        tick += 1;
+
+        if (tick >= ticks) {
+          clearInterval(spinAnimTimer);
+          spinAnimTimer = null;
+          nameEl.textContent = winner.name;
+          roleEl.textContent = winner.roleName || '';
+          const winMeta = roleMeta(winner.role);
+          cardEl.style.setProperty('--hue', winMeta.hue || 30);
+          if (winMeta.art) {
+            cardEl.style.backgroundImage = `linear-gradient(180deg, rgba(8,6,4,0.1), rgba(8,6,4,0.7)), url('${winMeta.art}')`;
+            cardEl.classList.add('has-art');
+          }
+          cardEl.classList.remove('spinning');
+          cardEl.classList.add('land');
+          overlay.classList.add('landed');
+          resultEl.textContent = `${winner.name} 先手！`;
+          setTimeout(() => {
+            cardEl.classList.remove('land');
+            overlay.classList.remove('show', 'landed');
+            finishFirstPlayerSpin();
+          }, 1200);
+        }
+      }, 90);
+    }
+
+    function render() {
+      const inRoom = !offlineSim && client && client.isJoinedToRoom();
+      document.getElementById('roomInfo').textContent = offlineSim
+        ? '本地模拟 · 无需联机'
+        : inRoom
+          ? `房间 ${client.myRoom().name} · ${client.myRoom().playerCount}人 · #${myActorNr}${isHost() ? ' 房主' : ''}`
+          : '';
+
+      document.getElementById('startBtn').disabled = offlineSim || !(isHost() && (!view || view.phase === 'lobby' || view.phase === 'ended'));
+      document.getElementById('simBtn').disabled = false;
+      document.getElementById('exitSimBtn').style.display = offlineSim ? '' : 'none';
+
+      if (!view || view.phase === 'lobby') {
+        document.getElementById('lobbyPanel').style.display = '';
+        document.getElementById('gamePanel').classList.remove('active');
+        if (!offlineSim) {
+          revealedOnce = false;
+          lastRevealKey = '';
+        }
+        return;
+      }
+
+      document.getElementById('lobbyPanel').style.display = view.phase === 'ended' ? '' : 'none';
+      document.getElementById('gamePanel').classList.add('active');
+
+      const curNr = view.turnOrder[view.currentTurn];
+      const fourPlayer = view.players.length === 4;
+      const panel = document.getElementById('gamePanel');
+      panel.classList.toggle('layout-cross', fourPlayer);
+      panel.classList.toggle('layout-classic', !fourPlayer);
+
+      document.getElementById('roundInfo').innerHTML =
+        `<strong>第 ${view.round} 轮</strong> · 弹药剩余 ${view.magazineCount}` +
+        (fourPlayer
+          ? (view.mode === 'team'
+            ? ' · 上下队友 · <span style="color:#ff8f88">红队</span> vs <span style="color:#8eb6ff">蓝队</span>'
+            : ' · 四人环桌')
+          : '') +
+        (view.phase === 'ended'
+          ? (view.winner
+            ? ` · <strong style="color:#6fbf8a">玩家#${view.winner} 获胜</strong>`
+            : view.winnerTeam != null
+              ? ` · <strong style="color:#6fbf8a">${view.winnerTeam === 0 ? '红队' : '蓝队'} 获胜</strong>`
+              : ' · 结束')
+          : ` · 当前行动 <strong>#${curNr}</strong>`);
+
+      // 中央弹药信息：已射出 / 本轮装弹
+      const loadout = view.loadout || { live: 0, blank: 0, special: 0 };
+      const fired = view.fired || { live: 0, blank: 0, special: 0 };
+      document.getElementById('loadoutRow').innerHTML = `
+        <span class="ammo-legend">子弹数</span>
+        <span class="ammo-chip live"><i></i>实弹 ${fired.live}/${loadout.live}</span>
+        <span class="ammo-chip blank"><i></i>空弹 ${fired.blank}/${loadout.blank}</span>
+        <span class="ammo-chip special"><i></i>特殊 ${fired.special}/${loadout.special}</span>
+      `;
+
+      const cyl = document.getElementById('cylinder');
+      cyl.innerHTML = Array.from({ length: view.magazineCount }, () =>
+        '<div class="shell unknown"></div>'
+      ).join('');
+      document.getElementById('feltStatus').textContent =
+        view.awaiting && view.awaiting.type === 'rattlesnake'
+          ? `响尾蛇抉择中：是否复制【${view.awaiting.itemName || '道具'}】…`
+          : view.magazineCount
+            ? `转轮剩余 ${view.magazineCount} 发（背面朝上）`
+            : '本轮弹药已打空';
+
+      const pills = [];
+      if (view.effects.reverseNext) pills.push('<span class="pill">反转挂起</span>');
+      if (view.effects.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
+      if (view.effects.linked.length) pills.push(`<span class="pill">连锁 ${view.effects.linked.join(',')}</span>`);
+      document.getElementById('effectPills').innerHTML = pills.join('');
+
+      const me = view.players.find((p) => p.actorNr === myActorNr);
+      const myTurn = view.phase === 'playing' && !view.awaiting && curNr === myActorNr;
+
+      function seatHtml(p, shotSide) {
+        const isMe = p.actorNr === myActorNr;
+        const ally = me && !isMe && view.mode === 'team' && p.team === me.team;
+        const cls = [
+          'hero-seat',
+          isMe ? 'me' : '',
+          ally ? 'ally' : '',
+          p.actorNr === curNr ? 'turn' : '',
+          !p.alive ? 'dead' : '',
+          !isMe && selectedTarget === p.actorNr ? 'selected' : ''
+        ].join(' ');
+        const name = isMe ? `你 · #${p.actorNr}` : `${p.name} #${p.actorNr}`;
+        const canShoot = myTurn && p.alive;
+        const shootBtn = `<button type="button" class="seat-shoot-btn" data-shoot="${p.actorNr}" ${canShoot ? '' : 'disabled'}>开枪</button>`;
+        const card = `<div class="${cls}" data-actor="${p.actorNr}" data-role="${p.role}" data-name="${p.name}">
+          <div class="seat-name">${name}</div>
+          ${roleCardHtml(p)}
+        </div>`;
+        const side = shotSide || 'right';
+        if (side === 'left') {
+          return `<div class="seat-shot-wrap side-left">${shootBtn}${card}</div>`;
+        }
+        return `<div class="seat-shot-wrap side-right">${card}${shootBtn}</div>`;
+      }
+
+      function bindSeats(root) {
+        if (!root) return;
+        root.querySelectorAll('.hero-seat').forEach((el) => {
+          const nr = Number(el.dataset.actor);
+          el.onmouseenter = () => showSkillTip(el.dataset.role, el.dataset.name, el);
+          el.onmouseleave = () => showSkillTip(null);
+          if (nr === myActorNr) return;
+          el.onclick = () => {
+            selectedTarget = selectedTarget === nr ? null : nr;
+            render();
+          };
+        });
+        root.querySelectorAll('.seat-shoot-btn').forEach((btn) => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            tryShootAt(Number(btn.dataset.shoot));
+          };
+        });
+      }
+
+      function paintSlot(el, player, teamClass, tag, shotSide) {
+        el.classList.remove('team-red', 'team-blue');
+        if (teamClass) el.classList.add(teamClass);
+        el.dataset.tag = tag || '';
+        if (!player) {
+          el.innerHTML = '';
+          return;
+        }
+        el.innerHTML = seatHtml(player, shotSide);
+        bindSeats(el);
+      }
+
+      if (fourPlayer && me) {
+        const sorted = view.players.slice().sort((a, b) => a.actorNr - b.actorNr);
+        let topP;
+        let leftP;
+        let rightP;
+        let myTeamClass = 'team-red';
+        let foeTeamClass = 'team-blue';
+
+        if (view.mode === 'team') {
+          myTeamClass = me.team === 0 ? 'team-red' : 'team-blue';
+          foeTeamClass = me.team === 0 ? 'team-blue' : 'team-red';
+          const ally = view.players.find((p) => p.team === me.team && p.actorNr !== me.actorNr);
+          const foes = view.players.filter((p) => p.team !== me.team).sort((a, b) => a.actorNr - b.actorNr);
+          topP = ally;
+          leftP = foes[0];
+          rightP = foes[1];
+        } else {
+          // 混战：仍十字落座，对面仅视觉相对
+          const others = sorted.filter((p) => p.actorNr !== me.actorNr);
+          topP = others[0];
+          leftP = others[1];
+          rightP = others[2];
+          myTeamClass = '';
+          foeTeamClass = '';
+        }
+
+        const allyTag = view.mode === 'team' ? (me.team === 0 ? '红队 · 队友' : '蓝队 · 队友') : '对面';
+        const foeTagL = view.mode === 'team' ? (me.team === 0 ? '蓝队' : '红队') : '左侧';
+        const foeTagR = view.mode === 'team' ? (me.team === 0 ? '蓝队' : '红队') : '右侧';
+
+        paintSlot(document.getElementById('seatTop'), topP, view.mode === 'team' ? myTeamClass : '', allyTag, 'right');
+        // 自己已在道具左侧完整展示，桌面底位不再重复
+        paintSlot(document.getElementById('seatBottom'), null, '', '');
+        paintSlot(document.getElementById('seatLeft'), leftP, view.mode === 'team' ? foeTeamClass : '', foeTagL, 'left');
+        paintSlot(document.getElementById('seatRight'), rightP, view.mode === 'team' ? foeTeamClass : '', foeTagR, 'right');
+
+        document.getElementById('opponents').innerHTML = '';
+        document.getElementById('mySeat').innerHTML = seatHtml(me, 'left');
+        bindSeats(document.getElementById('mySeat'));
+      } else {
+        ['seatTop', 'seatBottom', 'seatLeft', 'seatRight'].forEach((id) => {
+          const el = document.getElementById(id);
+          el.innerHTML = '';
+          el.classList.remove('team-red', 'team-blue');
+          el.dataset.tag = '';
+        });
+        const others = view.players.filter((p) => p.actorNr !== myActorNr);
+        document.getElementById('opponents').innerHTML = others.map((p) => seatHtml(p, 'right')).join('');
+        if (me) document.getElementById('mySeat').innerHTML = seatHtml(me, 'left');
+        bindSeats(document.getElementById('opponents'));
+        bindSeats(document.getElementById('mySeat'));
+      }
+
+      // 手牌扇形
+      const myHand = (view.me && view.me.hand) || [];
+      const handEl = document.getElementById('hand');
+      handEl.innerHTML = myHand.map((id, i) => {
+        const it = itemMeta(id);
+        if (it.art) {
+          return `<div class="item-card has-art ${selectedHand.includes(i) ? 'selected' : ''}" data-i="${i}" title="${it.name}">
+            <img class="art-img" src="${it.art}" alt="${it.name}" draggable="false">
+          </div>`;
+        }
+        return `<div class="item-card ${selectedHand.includes(i) ? 'selected' : ''}" data-i="${i}" style="--hue:${it.hue}" title="${it.name}">
+          <span class="art-glyph">${it.glyph}</span>
+          <span class="fallback-name">${it.name}</span>
+        </div>`;
+      }).join('') || '<span class="meta">手牌为空</span>';
+
+      handEl.querySelectorAll('.item-card').forEach((el) => {
+        el.onclick = () => {
+          const i = Number(el.dataset.i);
+          if (selectedHand.includes(i)) selectedHand = selectedHand.filter((x) => x !== i);
+          else selectedHand.push(i);
+          render();
+        };
+      });
+
+      const peeks = [];
+      if (view.me && view.me.lastPeek) {
+        peeks.push(`检视：第 ${view.me.lastPeek.index + 1} 发 = ${bulletLabel(view.me.lastPeek.bullet)}`);
+      }
+      if (view.me && view.me.peekedBottom) {
+        peeks.push(`火药底部：${view.me.peekedBottom.map(bulletLabel).join('、')}`);
+      }
+      document.getElementById('privateInfo').textContent = peeks.join(' ｜ ');
+
+      const othersAlive = view.players.filter((p) => p.alive && p.actorNr !== myActorNr);
+      if (selectedTarget && !othersAlive.some((p) => p.actorNr === selectedTarget)) {
+        selectedTarget = othersAlive[0] ? othersAlive[0].actorNr : null;
+      }
+      if (!selectedTarget && othersAlive[0]) selectedTarget = othersAlive[0].actorNr;
+
+      const myAwait = view.awaiting && view.awaiting.actorNr === myActorNr;
+      document.getElementById('useItemBtn').disabled = !myTurn || selectedHand.length !== 1;
+
+      // 角色专属操作：仅对应角色可见
+      const ironRoseBtn = document.getElementById('ironRoseBtn');
+      const isIronRose = me && me.role === 'iron_rose';
+      ironRoseBtn.style.display = isIronRose ? '' : 'none';
+      ironRoseBtn.disabled = !(myTurn && isIronRose && selectedHand.length === 2);
+
+      const snakeBar = document.getElementById('snakeBar');
+      const snakeAwait = view.awaiting && view.awaiting.type === 'rattlesnake';
+      if (snakeAwait) {
+        armRattlesnakeWindow(view.awaiting);
+        const mine = view.awaiting.actorNr === myActorNr;
+        snakeBar.style.display = mine ? 'inline-flex' : 'none';
+        document.getElementById('snakeBtn').disabled = !mine;
+        document.getElementById('snakePassBtn').disabled = !mine;
+      } else {
+        snakeBar.style.display = 'none';
+        clearSnakeTimers();
+      }
+
+      const awaitBar = document.getElementById('awaitBar');
+      if (view.awaiting && view.awaiting.type === 'double_barrel' && myAwait) {
+        awaitBar.style.display = 'inline-flex';
+        document.getElementById('awaitHint').textContent = `双管声明 1~${view.awaiting.magSize}`;
+        document.getElementById('dbBtn').disabled = false;
+        document.getElementById('dbIndex').max = view.awaiting.magSize;
+      } else {
+        awaitBar.style.display = 'none';
+      }
+
+      if (offlineSim) scheduleBotIfNeeded();
+    }
+
+    function sendAction(action) {
+      if (offlineSim) {
+        const result = handleAction(gameState, myActorNr, action);
+        if (!result.ok) gameLog(`动作被拒绝：${result.reason}`);
+        refreshLocalView();
+        return;
+      }
+      client.raiseEvent(EVT_ACTION, action, {
+        receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
+      });
+    }
+
+    function hostProcessAction(fromActorNr, action) {
+      if (!isHost() || !gameState) return;
+      const result = handleAction(gameState, fromActorNr, action);
+      if (!result.ok) gameLog(`动作被拒绝：${result.reason}`);
+      broadcastState();
+    }
+
+    function startGameAsHost() {
+      if (!isHost()) return;
+      const actors = roomActors().map((a) => ({
+        actorNr: a.actorNr,
+        name: `玩家${a.actorNr}`
+      }));
+      if (actors.length < 2) {
+        alert('至少需要 2 名玩家');
+        return;
+      }
+      let mode = document.getElementById('modeSelect').value;
+      if (mode === 'team' && actors.length !== 4) {
+        alert('组队模式需要正好 4 人，已改为混战');
+        mode = 'ffa';
+      }
+      gameState = createEmptyState();
+      actors.sort((a, b) => a.actorNr - b.actorNr);
+      revealedOnce = false;
+      lastRevealKey = '';
+      lastSpinToken = '';
+      lastAmmoToken = '';
+      initPlayers(gameState, actors, mode);
+      if (mode === 'team') {
+        gameState.players.forEach((p, i) => { p.team = i % 2; });
+        gameState.turnOrder = actors.map((a) => a.actorNr);
+        // 保持本轮已抽出的先手
+        const fp = gameState.awaiting && (
+          gameState.awaiting.type === 'first_player_spin'
+            ? gameState.awaiting.actorNr
+            : (gameState.awaiting.type === 'ammo_draw' && gameState.awaiting.firstPlayer
+              ? gameState.awaiting.firstPlayer.actorNr
+              : null)
+        );
+        if (fp) {
+          const i = gameState.turnOrder.indexOf(fp);
+          if (i > 0) {
+            gameState.turnOrder = gameState.turnOrder.slice(i).concat(gameState.turnOrder.slice(0, i));
+          }
+          gameState.currentTurn = 0;
+        }
+      }
+      broadcastState();
+    }
+
+    function createClient(preferRejoin) {
+      if (typeof Photon === 'undefined') {
+        statusDiv.textContent = 'Photon SDK 加载失败';
+        return;
+      }
+      client = new LBC(Photon.ConnectionProtocol.Wss, APP_ID, APP_VERSION);
+      client.setUserId(getStableUserId());
+
+      client.onError = function (errorCode, errorMsg) {
+        statusDiv.textContent = `连接错误: ${errorCode} - ${errorMsg}`;
+        gameLog(`错误: [${errorCode}] ${errorMsg}`);
+      };
+
+      client.onOperationResponse = function (errorCode, errorMsg, code) {
+        if (!errorCode) return;
+        gameLog(`操作失败 op=${code} code=${errorCode} msg=${errorMsg}`);
+        // rejoin 失败则普通加入
+        if (window.__rejoinPending && (code === 226 || code === 227)) {
+          gameLog('重连原座位失败，改为普通加入同一房间名...');
+          joinCreateRoom();
+        }
+      };
+
+      client.onStateChange = function (state) {
+        if (state === LBC.State.JoinedLobby) {
+          statusDiv.textContent = '已连上大厅，正在进入房间...';
+          preferredRoom = document.getElementById('roomName').value.trim() || 'DevilRoom_101';
+          joinPreferredRoom(!!preferRejoin);
+        } else if (state === LBC.State.Disconnected) {
+          statusDiv.textContent = '已断开连接';
+        }
+      };
+
+      client.onJoinRoom = function () {
+        myActorNr = client.myActor().actorNr;
+        window.__rejoinPending = false;
+        sessionStorage.setItem('dr_room', preferredRoom);
+        statusDiv.textContent = `已进入房间 · Master #${client.myRoomMasterActorNr()}`;
+        gameLog(`加入成功，我是 #${myActorNr}，UserId=${client.getUserId()}，Master=#${client.myRoomMasterActorNr()}`);
+
+        // 若房间里已有存档且我是房主，恢复
+        if (isHost()) {
+          tryBecomeHostWithBackup('进房');
+        }
+
+        if (!gameState) {
+          // 先显示大厅，再向房主要状态
+          if (!view || view.phase === 'lobby') {
+            view = { phase: 'lobby', players: [], turnOrder: [], currentTurn: 0, publicLog: [] };
+          }
+          requestSync();
+        }
+        render();
+      };
+
+      client.onActorJoin = function (actor) {
+        gameLog(`玩家加入 #${actor.actorNr}`);
+        if (isHost() && gameState) persistAndBroadcast();
+        render();
+      };
+
+      client.onActorLeave = function (actor) {
+        gameLog(`玩家离开 #${actor.actorNr}`);
+        // Master 可能已迁移到自己
+        setTimeout(() => {
+          if (tryBecomeHostWithBackup('原房主离开')) {
+            // ok
+          }
+          render();
+        }, 50);
+      };
+
+      client.onEvent = function (code, content, actorNr) {
+        if (code === EVT_ACTION) {
+          hostProcessAction(actorNr, content);
+        } else if (code === EVT_STATE) {
+          applyView(content);
+        } else if (code === EVT_FULL) {
+          fullStateBackup = content;
+          // 若我已是房主但本地没有状态，立刻接管
+          if (isHost() && !gameState && content) {
+            gameState = JSON.parse(JSON.stringify(content));
+            persistAndBroadcast();
+          }
+        } else if (code === EVT_HELLO) {
+          if (isHost() && gameState) persistAndBroadcast();
+        }
+      };
+
+      gameLog(`连接 Photon（asia），UserId=${client.getUserId()}...`);
+      client.connectToRegionMaster('asia');
+    }
+
+    document.getElementById('startBtn').onclick = () => {
+      if (offlineSim) return;
+      if (isHost()) startGameAsHost();
+    };
+
+    document.getElementById('simBtn').onclick = () => startOfflineSim();
+    document.getElementById('exitSimBtn').onclick = () => exitOfflineSim();
+
+    function playerLabel(actorNr) {
+      const p = view && view.players && view.players.find((x) => x.actorNr === actorNr);
+      if (!p) return `#${actorNr}`;
+      return `${p.name}（#${p.actorNr}）`;
+    }
+
+    function tryShootAt(targetActorNr) {
+      if (!view || view.phase !== 'playing' || view.awaiting) return;
+      if (view.turnOrder[view.currentTurn] !== myActorNr) return;
+      const target = view.players.find((p) => p.actorNr === targetActorNr);
+      if (!target || !target.alive) return;
+
+      const me = view.players.find((p) => p.actorNr === myActorNr);
+      const toSelf = targetActorNr === myActorNr;
+      let nightOwlTargetNr;
+      let confirmMsg = toSelf
+        ? `确认对自己（${playerLabel(myActorNr)}）开枪？`
+        : `确认对 ${playerLabel(targetActorNr)} 开枪？`;
+
+      if (toSelf && me && me.role === 'night_owl' && me.hp <= 4) {
+        const foes = view.players.filter((p) => p.alive && p.actorNr !== myActorNr);
+        let link = selectedTarget && foes.some((f) => f.actorNr === selectedTarget)
+          ? selectedTarget
+          : (foes.length === 1 ? foes[0].actorNr : null);
+        if (!link) {
+          alert('夜枭血量≤4：请先点选一名对手卡牌，实弹将与你一起扣血。');
+          return;
+        }
+        nightOwlTargetNr = link;
+        confirmMsg = `确认对自己开枪？\n（夜枭效果：若打出实弹，你与 ${playerLabel(link)} 将一起扣血）`;
+      }
+
+      if (!confirm(confirmMsg)) return;
+      sendAction({ type: 'shoot', targetActorNr, nightOwlTargetNr });
+      selectedHand = [];
+    }
+
+    document.getElementById('useItemBtn').onclick = () => {
+      if (selectedHand.length !== 1) return;
+      const itemIndex = selectedHand[0];
+      const itemId = view.me.hand[itemIndex];
+      const payload = {};
+      if (itemId === 'bind') {
+        if (!selectedTarget) return alert('请先点击一名对手作为捆绑目标');
+        payload.targetActorNr = selectedTarget;
+      } else if (itemId === 'inspect') {
+        payload.index = Math.max(0, Number(prompt('查看从上数第几发？', '1')) - 1);
+      } else if (itemId === 'swap') {
+        payload.i = Number(prompt('交换：第几发', '1')) - 1;
+        payload.j = Number(prompt('与第几发', '2')) - 1;
+      } else if (itemId === 'double_arrow') {
+        if (!confirm('确定=设置连锁（用当前选中目标）；取消=解除连锁')) {
+          payload.unlock = true;
+        } else {
+          payload.targets = selectedTarget ? [selectedTarget] : [];
+        }
+      }
+      sendAction({ type: 'use_item', itemIndex, payload });
+      selectedHand = [];
+    };
+
+    document.getElementById('ironRoseBtn').onclick = () => {
+      sendAction({ type: 'iron_rose', handIndexes: selectedHand.slice(0, 2) });
+      selectedHand = [];
+    };
+
+    document.getElementById('snakeBtn').onclick = () => sendAction({ type: 'rattlesnake_copy' });
+    document.getElementById('snakePassBtn').onclick = () => sendAction({ type: 'rattlesnake_pass' });
+
+    document.getElementById('dbBtn').onclick = () => {
+      sendAction({
+        type: 'double_barrel',
+        index: Number(document.getElementById('dbIndex').value),
+        kind: document.getElementById('dbKind').value
+      });
+    };
+
+    document.getElementById('reconnectBtn').onclick = () => {
+      preferredRoom = document.getElementById('roomName').value.trim() || 'DevilRoom_101';
+      if (client) try { client.disconnect(); } catch (e) {}
+      // 不清空 fullStateBackup：同页重连还能用；刷新则靠房间属性/他人备份
+      gameState = null;
+      view = null;
+      createClient(true);
+    };
+
+    // 刷新后自动尝试 rejoin 上次房间
+    const lastRoom = sessionStorage.getItem('dr_room');
+    if (lastRoom) {
+      document.getElementById('roomName').value = lastRoom;
+      preferredRoom = lastRoom;
+    }
+    createClient(!!lastRoom);
+  </script>
+</body>
+
+</html>

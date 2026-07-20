@@ -1,0 +1,23 @@
+{
+  "name": "photon-realtime",
+  "version": "4.4.0",
+  "description": "Photon Realtime Client",
+  "main": "photon-realtime-module.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "photon",
+    "photonengine",
+    "networking",
+    "multiplayer"
+  ],
+  "author": "Exit Games GmbH",
+  "license": "SEE LICENSE IN https://www.photonengine.com/terms",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "files": [
+    "photon-realtime-module.js"
+  ]
+}
