@@ -526,7 +526,7 @@ function rattlesnakeCopy(state, actorNr) {
   const { itemId, payload } = state.lastItemForSnake;
   logState(state, `${p.name}（响尾蛇）消耗 1 血复制【${ITEMS[itemId].name}】。`);
   clearRattlesnakeOpportunity(state);
-  applyItemEffect(state, p, itemId, payload || {});
+  applyItemEffect(state, p, itemId, { ...(payload || {}), _noSnakeOffer: true });
   if (p.hp <= 0) {
     p.alive = false;
     logState(state, `${p.name} 出局！`);
@@ -561,45 +561,134 @@ function rattlesnakeTimeout(state, token) {
   return { ok: true };
 }
 
+function continueAfterEject(state) {
+  if (!state.awaiting || state.awaiting.type !== 'eject_anim') {
+    return { ok: false, reason: '无需确认退弹' };
+  }
+  const { bullet, remaining, actorNr, offerSnake } = state.awaiting;
+  const player = getPlayer(state, actorNr);
+  state.awaiting = null;
+
+  logState(state, `退弹：弃置【${bulletLabel(bullet)}】。剩余 ${remaining}。`);
+  if (remaining === 0) {
+    logState(state, '弹药打空，本轮结束。');
+    startRound(state);
+    return { ok: true };
+  }
+  if (offerSnake && player) offerRattlesnake(state, player, 'eject', {});
+  return { ok: true };
+}
+
+function continueAfterPainkillerDice(state) {
+  if (!state.awaiting || state.awaiting.type !== 'painkiller_dice') {
+    return { ok: false, reason: '无需确认骰子' };
+  }
+  const { roll, actorNr, offerSnake } = state.awaiting;
+  const player = getPlayer(state, actorNr);
+  state.awaiting = null;
+  if (!player) return { ok: false, reason: '玩家不存在' };
+
+  logState(state, `止痛药掷出 ${roll}（${roll % 2 === 1 ? '奇数' : '偶数'}）。`);
+  if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：');
+  else heal(state, player, 2);
+
+  if (offerSnake) offerRattlesnake(state, player, 'painkiller', {});
+  return { ok: true };
+}
+
+function continueAfterItemFx(state) {
+  if (!state.awaiting || state.awaiting.type !== 'item_fx') {
+    return { ok: false, reason: '无需确认道具动画' };
+  }
+  const { itemId, actorNr, offerSnake, snakePayload } = state.awaiting;
+  const player = getPlayer(state, actorNr);
+  state.awaiting = null;
+  if (offerSnake && player) offerRattlesnake(state, player, itemId, snakePayload || {});
+  return { ok: true };
+}
+
+function startItemFx(state, player, itemId, payload, visual) {
+  const safePayload = Object.assign({}, payload || {});
+  delete safePayload._noSnakeOffer;
+  state.awaiting = Object.assign(
+    {
+      type: 'item_fx',
+      itemId,
+      itemName: ITEMS[itemId] ? ITEMS[itemId].name : itemId,
+      actorNr: player.actorNr,
+      name: player.name,
+      token: `fx-${itemId}-${state.round}-${Date.now()}`,
+      offerSnake: !(payload && payload._noSnakeOffer),
+      snakePayload: safePayload
+    },
+    visual || {}
+  );
+}
+
 function applyItemEffect(state, player, itemId, payload) {
+  payload = payload || {};
   switch (itemId) {
-    case 'lucky_coin':
+    case 'lucky_coin': {
+      const start = player.hand.length;
       drawItems(state, player, 2);
+      const drawn = player.hand.slice(start);
+      logState(state, `${player.name} 抽到 ${drawn.length} 张道具。`);
+      startItemFx(state, player, itemId, payload, {
+        private: true,
+        drawn: drawn.slice()
+      });
       break;
+    }
     case 'painkiller': {
       const roll = 1 + Math.floor(Math.random() * 6);
-      logState(state, `止痛药掷出 ${roll}。`);
-      if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：');
-      else heal(state, player, 2);
+      state.awaiting = {
+        type: 'painkiller_dice',
+        actorNr: player.actorNr,
+        name: player.name,
+        roll,
+        token: `pk-${state.round}-${player.actorNr}-${Date.now()}`,
+        offerSnake: !payload._noSnakeOffer
+      };
+      logState(state, `${player.name} 使用止痛药，投掷六面骰…`);
       break;
     }
     case 'bandage':
       heal(state, player, 1);
+      startItemFx(state, player, itemId, payload, { heal: 1, hpAfter: player.hp });
       break;
     case 'eject':
       if (state.magazine.length) {
         const b = state.magazine.pop();
-        logState(state, `退弹：弃置【${bulletLabel(b)}】。剩余 ${state.magazine.length}。`);
-        if (state.magazine.length === 0) {
-          logState(state, '弹药打空，本轮结束。');
-          startRound(state);
-        }
+        state.awaiting = {
+          type: 'eject_anim',
+          actorNr: player.actorNr,
+          name: player.name,
+          bullet: b,
+          remaining: state.magazine.length,
+          token: `ej-${state.round}-${player.actorNr}-${Date.now()}`,
+          offerSnake: !payload._noSnakeOffer
+        };
+        logState(state, `${player.name} 退弹：弃置弹药中…`);
       }
       break;
     case 'inspect': {
       const idx = typeof payload.index === 'number' ? payload.index : 0;
       if (idx >= 0 && idx < state.magazine.length) {
-        player.lastPeek = { index: idx, bullet: state.magazine[state.magazine.length - 1 - idx] };
-        // magazine[0] is bottom, pop from end = top. Top index 0 = last element
         const topBased = state.magazine[state.magazine.length - 1 - idx];
         player.lastPeek = { index: idx, bullet: topBased };
         logState(state, `${player.name} 检视了弹药堆从上数第 ${idx + 1} 张（仅自己可见）。`);
+        startItemFx(state, player, itemId, payload, {
+          private: true,
+          peekIndex: idx,
+          bullet: topBased
+        });
       }
       break;
     }
     case 'shotgun':
       state.effects.shotgunNext = true;
       logState(state, '霰弹枪已挂起：下一发若为实弹则伤害×2。');
+      startItemFx(state, player, itemId, payload, {});
       break;
     case 'swap': {
       const i = payload.i | 0;
@@ -608,25 +697,37 @@ function applyItemEffect(state, player, itemId, payload) {
       const b = state.magazine.length - 1 - j;
       if (a >= 0 && b >= 0 && a < state.magazine.length && b < state.magazine.length) {
         [state.magazine[a], state.magazine[b]] = [state.magazine[b], state.magazine[a]];
-        logState(state, `${player.name} 交换了弹药位置。`);
+        logState(state, `${player.name} 交换了第 ${i + 1} 发与第 ${j + 1} 发。`);
+        startItemFx(state, player, itemId, payload, { swapFrom: i + 1, swapTo: j + 1 });
       }
       break;
     }
     case 'peek_top':
       if (state.magazine.length) {
-        player.lastPeek = { index: 0, bullet: state.magazine[state.magazine.length - 1] };
+        const top = state.magazine[state.magazine.length - 1];
+        player.lastPeek = { index: 0, bullet: top };
         logState(state, `${player.name} 查看了弹药堆顶（仅自己可见）。`);
+        startItemFx(state, player, itemId, payload, {
+          private: true,
+          peekIndex: 0,
+          bullet: top
+        });
       }
       break;
     case 'reverse':
       state.effects.reverseNext = true;
       logState(state, '反转已挂起：下一发实↔空。');
+      startItemFx(state, player, itemId, payload, {});
       break;
     case 'bind': {
       const t = getPlayer(state, payload.targetActorNr);
       if (t && t.alive && t.actorNr !== player.actorNr) {
         t.skipNextTurn = true;
         logState(state, `${t.name} 被捆绑，下一回合无法行动。`);
+        startItemFx(state, player, itemId, payload, {
+          targetName: t.name,
+          targetActorNr: t.actorNr
+        });
       }
       break;
     }
@@ -634,10 +735,16 @@ function applyItemEffect(state, player, itemId, payload) {
       if (payload.unlock) {
         state.effects.linked = [];
         logState(state, '连锁已解除。');
+        startItemFx(state, player, itemId, payload, { unlock: true, linkNames: [] });
       } else {
         const targets = (payload.targets || []).map((nr) => getPlayer(state, nr)).filter((p) => p && p.alive);
         state.effects.linked = targets.map((p) => p.actorNr);
         logState(state, `连锁目标：${targets.map((p) => p.name).join('、') || '无'}。`);
+        startItemFx(state, player, itemId, payload, {
+          unlock: false,
+          linkNames: targets.map((p) => p.name),
+          linkActors: targets.map((p) => p.actorNr)
+        });
       }
       break;
     }
@@ -721,6 +828,20 @@ function checkWin(state) {
 }
 
 /** 发给客户端的视图：隐藏他人手牌与弹药内容 */
+function viewAwaiting(state, viewerActorNr) {
+  const a = state.awaiting;
+  if (!a) return null;
+  if (a.type !== 'item_fx') return a;
+  const copy = Object.assign({}, a);
+  delete copy.snakePayload;
+  if (a.private && Number(a.actorNr) !== Number(viewerActorNr)) {
+    delete copy.bullet;
+    delete copy.drawn;
+    copy.hidden = true;
+  }
+  return copy;
+}
+
 function publicView(state, viewerActorNr) {
   const viewer = getPlayer(state, viewerActorNr);
   return {
@@ -738,7 +859,7 @@ function publicView(state, viewerActorNr) {
       linked: state.effects.linked.slice(),
       doubleItemBonus: state.effects.doubleItemBonus
     },
-    awaiting: state.awaiting,
+    awaiting: viewAwaiting(state, viewerActorNr),
     winner: state.winner,
     winnerTeam: state.winnerTeam,
     publicLog: state.publicLog.slice(-30),
@@ -780,6 +901,12 @@ function handleAction(state, actorNr, action) {
       return continueAfterAmmoDraw(state);
     case 'first_player_done':
       return continueAfterFirstPlayer(state);
+    case 'painkiller_dice_done':
+      return continueAfterPainkillerDice(state);
+    case 'eject_done':
+      return continueAfterEject(state);
+    case 'item_fx_done':
+      return continueAfterItemFx(state);
     case 'iron_rose':
       return useIronRose(state, actorNr, action.handIndexes);
     case 'rattlesnake_copy':

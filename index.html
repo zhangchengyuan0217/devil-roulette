@@ -137,6 +137,32 @@
     <div class="ammo-draw-result" id="ammoDrawResult"></div>
   </div>
 
+  <div class="dice-overlay" id="diceOverlay">
+    <div class="dice-title">止痛药</div>
+    <div class="dice-sub" id="diceSub">投掷六面骰…</div>
+    <div class="dice-cube" id="diceCube">
+      <span class="dice-face" id="diceFace">?</span>
+    </div>
+    <div class="dice-result" id="diceResult"></div>
+  </div>
+
+  <div class="eject-overlay" id="ejectOverlay">
+    <div class="eject-title">退弹</div>
+    <div class="eject-sub" id="ejectSub">弃置弹药堆顶…</div>
+    <div class="eject-shell unknown" id="ejectShell">
+      <span class="eject-shell-mark" id="ejectShellMark">?</span>
+      <span class="eject-shell-label" id="ejectShellLabel">未知</span>
+    </div>
+    <div class="eject-result" id="ejectResult"></div>
+  </div>
+
+  <div class="item-fx-overlay" id="itemFxOverlay">
+    <div class="item-fx-title" id="itemFxTitle">道具效果</div>
+    <div class="item-fx-sub" id="itemFxSub"></div>
+    <div class="item-fx-stage" id="itemFxStage"></div>
+    <div class="item-fx-result" id="itemFxResult"></div>
+  </div>
+
   <!-- 固定层提示：不占文档流，避免悬停重排 -->
   <div class="skill-tip" id="skillTip" aria-live="polite"></div>
 
@@ -176,6 +202,12 @@
     let spinAnimTimer = null;
     let lastAmmoToken = '';
     let ammoAnimTimer = null;
+    let lastDiceToken = '';
+    let diceAnimTimer = null;
+    let lastEjectToken = '';
+    let ejectAnimTimer = null;
+    let lastItemFxToken = '';
+    let itemFxTimer = null;
     let snakeTimer = null;
     let snakeTimerToken = '';
     let snakeCountdownTimer = null;
@@ -277,6 +309,9 @@
       if (!offlineSim || !gameState || gameState.phase !== 'playing') return;
       if (gameState.awaiting && gameState.awaiting.type === 'first_player_spin') return;
       if (gameState.awaiting && gameState.awaiting.type === 'ammo_draw') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'painkiller_dice') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'eject_anim') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
         if (gameState.awaiting.actorNr === myActorNr) return; // 本人手动抉择
         botTimer = setTimeout(() => {
@@ -299,6 +334,9 @@
       if (!offlineSim || !gameState || gameState.phase !== 'playing') return;
       if (gameState.awaiting && gameState.awaiting.type === 'first_player_spin') return;
       if (gameState.awaiting && gameState.awaiting.type === 'ammo_draw') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'painkiller_dice') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'eject_anim') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
 
       // 响尾蛇窗口（机器人）
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
@@ -395,6 +433,9 @@
       lastRevealKey = '';
       lastSpinToken = '';
       lastAmmoToken = '';
+      lastDiceToken = '';
+      lastEjectToken = '';
+      lastItemFxToken = '';
       selectedHand = [];
       selectedTarget = null;
       initPlayers(gameState, actors, mode);
@@ -434,8 +475,23 @@
         clearInterval(ammoAnimTimer);
         ammoAnimTimer = null;
       }
+      if (diceAnimTimer) {
+        clearInterval(diceAnimTimer);
+        diceAnimTimer = null;
+      }
+      if (ejectAnimTimer) {
+        clearTimeout(ejectAnimTimer);
+        ejectAnimTimer = null;
+      }
+      if (itemFxTimer) {
+        clearTimeout(itemFxTimer);
+        itemFxTimer = null;
+      }
       lastSpinToken = '';
       lastAmmoToken = '';
+      lastDiceToken = '';
+      lastEjectToken = '';
+      lastItemFxToken = '';
       offlineSim = false;
       gameState = null;
       fullStateBackup = null;
@@ -540,6 +596,9 @@
       render();
       syncLogFromView();
       maybeShowAmmoDraw();
+      maybeShowPainkillerDice();
+      maybeShowEjectAnim();
+      maybeShowItemFx();
       maybeShowFirstSpin();
     }
 
@@ -661,6 +720,9 @@
     document.getElementById('revealCloseBtn').onclick = () => {
       document.getElementById('revealOverlay').classList.remove('show');
       maybeShowAmmoDraw();
+      maybeShowPainkillerDice();
+      maybeShowEjectAnim();
+      maybeShowItemFx();
       maybeShowFirstSpin();
     };
 
@@ -710,6 +772,7 @@
       blankTile.classList.remove('spinning', 'land');
       liveTile.classList.remove('land');
       specialWrap.hidden = true;
+      specialWrap.classList.remove('pop');
       resultEl.textContent = '';
       subEl.textContent = `第 ${awaiting.round} 轮 · 抽取实弹数量…`;
       liveNum.textContent = '?';
@@ -717,7 +780,6 @@
 
       const liveTarget = awaiting.live || 1;
       const blankTarget = awaiting.blank || 1;
-      const special = awaiting.special || 0;
       let tick = 0;
       const liveTicks = 14 + Math.floor(Math.random() * 6);
       const blankTicks = 14 + Math.floor(Math.random() * 6);
@@ -745,12 +807,15 @@
             blankTile.classList.add('land');
             phase = 'done';
             overlay.classList.add('phase-done', 'landed');
+            // 仅场上有银刺（本轮塞入特殊弹）时展示
+            const special = awaiting.special || 0;
             if (special > 0) {
               specialWrap.hidden = false;
               specialWrap.classList.add('pop');
             }
-            const total = liveTarget + blankTarget + special;
-            resultEl.textContent = `本轮装入 ${liveTarget} 实弹 + ${blankTarget} 空弹${special ? ' + 特殊弹' : ''}，共 ${total} 发`;
+            resultEl.textContent = special > 0
+              ? `本轮装入 ${liveTarget} 实弹 + ${blankTarget} 空弹 + 特殊弹`
+              : `本轮装入 ${liveTarget} 实弹 + ${blankTarget} 空弹`;
             subEl.textContent = `第 ${awaiting.round} 轮装弹完成`;
             clearInterval(ammoAnimTimer);
             ammoAnimTimer = null;
@@ -758,12 +823,283 @@
               overlay.classList.remove('show', 'landed', 'phase-blank', 'phase-done');
               liveTile.classList.remove('land');
               blankTile.classList.remove('land');
+              specialWrap.hidden = true;
               specialWrap.classList.remove('pop');
               finishAmmoDraw();
             }, 1100);
           }
         }
       }, 85);
+    }
+
+    function finishPainkillerDice() {
+      if (!isHost()) return;
+      sendAction({ type: 'painkiller_dice_done' });
+    }
+
+    function maybeShowPainkillerDice() {
+      const overlay = document.getElementById('diceOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'painkiller_dice') {
+        if (diceAnimTimer) {
+          clearInterval(diceAnimTimer);
+          diceAnimTimer = null;
+        }
+        overlay.classList.remove('show', 'landed', 'odd', 'even');
+        return;
+      }
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (awaiting.token && awaiting.token === lastDiceToken) {
+        if (!overlay.classList.contains('show')) overlay.classList.add('show');
+        return;
+      }
+      lastDiceToken = awaiting.token || `dice-${awaiting.actorNr}-${awaiting.roll}`;
+      playPainkillerDice(awaiting);
+    }
+
+    function playPainkillerDice(awaiting) {
+      const overlay = document.getElementById('diceOverlay');
+      const cube = document.getElementById('diceCube');
+      const face = document.getElementById('diceFace');
+      const resultEl = document.getElementById('diceResult');
+      const subEl = document.getElementById('diceSub');
+
+      if (diceAnimTimer) {
+        clearInterval(diceAnimTimer);
+        diceAnimTimer = null;
+      }
+
+      const target = awaiting.roll || 1;
+      const odd = target % 2 === 1;
+      overlay.classList.add('show');
+      overlay.classList.remove('landed', 'odd', 'even');
+      cube.classList.add('rolling');
+      cube.classList.remove('land');
+      resultEl.textContent = '';
+      subEl.textContent = `${awaiting.name || '玩家'} 投掷六面骰…`;
+      face.textContent = '?';
+
+      let tick = 0;
+      const ticks = 16 + Math.floor(Math.random() * 8);
+      diceAnimTimer = setInterval(() => {
+        tick += 1;
+        face.textContent = 1 + Math.floor(Math.random() * 6);
+        if (tick >= ticks) {
+          clearInterval(diceAnimTimer);
+          diceAnimTimer = null;
+          face.textContent = target;
+          cube.classList.remove('rolling');
+          cube.classList.add('land');
+          overlay.classList.add('landed', odd ? 'odd' : 'even');
+          resultEl.textContent = odd
+            ? `掷出 ${target}（奇数）→ 失去 1 点血量`
+            : `掷出 ${target}（偶数）→ 回复 2 点血量`;
+          subEl.textContent = '骰子结果';
+          setTimeout(() => {
+            overlay.classList.remove('show', 'landed', 'odd', 'even');
+            cube.classList.remove('land');
+            finishPainkillerDice();
+          }, 1200);
+        }
+      }, 70);
+    }
+
+    function finishEjectAnim() {
+      if (!isHost()) return;
+      sendAction({ type: 'eject_done' });
+    }
+
+    function maybeShowEjectAnim() {
+      const overlay = document.getElementById('ejectOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'eject_anim') {
+        if (ejectAnimTimer) {
+          clearTimeout(ejectAnimTimer);
+          ejectAnimTimer = null;
+        }
+        overlay.classList.remove('show', 'landed', 'is-live', 'is-blank', 'is-special');
+        return;
+      }
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (document.getElementById('diceOverlay').classList.contains('show')) return;
+      if (awaiting.token && awaiting.token === lastEjectToken) {
+        if (!overlay.classList.contains('show')) overlay.classList.add('show');
+        return;
+      }
+      lastEjectToken = awaiting.token || `ej-${awaiting.actorNr}-${awaiting.bullet}`;
+      playEjectAnim(awaiting);
+    }
+
+    function playEjectAnim(awaiting) {
+      const overlay = document.getElementById('ejectOverlay');
+      const shell = document.getElementById('ejectShell');
+      const mark = document.getElementById('ejectShellMark');
+      const label = document.getElementById('ejectShellLabel');
+      const resultEl = document.getElementById('ejectResult');
+      const subEl = document.getElementById('ejectSub');
+
+      if (ejectAnimTimer) {
+        clearTimeout(ejectAnimTimer);
+        ejectAnimTimer = null;
+      }
+
+      const bullet = awaiting.bullet;
+      const kindClass = bullet === 'live' ? 'is-live' : bullet === 'blank' ? 'is-blank' : 'is-special';
+      const name = bulletLabel(bullet);
+
+      overlay.classList.add('show');
+      overlay.classList.remove('landed', 'is-live', 'is-blank', 'is-special');
+      shell.className = 'eject-shell unknown flipping';
+      mark.textContent = '?';
+      label.textContent = '背面';
+      resultEl.textContent = '';
+      subEl.textContent = `${awaiting.name || '玩家'} 弃置弹药堆顶…`;
+
+      // 翻面揭示
+      ejectAnimTimer = setTimeout(() => {
+        shell.classList.remove('unknown', 'flipping');
+        shell.classList.add('revealed', kindClass.replace('is-', ''));
+        overlay.classList.add('landed', kindClass);
+        mark.textContent = bullet === 'live' ? '实' : bullet === 'blank' ? '空' : '特';
+        label.textContent = name;
+        resultEl.textContent = `弃置【${name}】 · 转轮剩余 ${awaiting.remaining} 发`;
+        subEl.textContent = '退弹完成';
+        ejectAnimTimer = setTimeout(() => {
+          overlay.classList.remove('show', 'landed', 'is-live', 'is-blank', 'is-special');
+          shell.className = 'eject-shell unknown';
+          ejectAnimTimer = null;
+          finishEjectAnim();
+        }, 1100);
+      }, 900);
+    }
+
+    function finishItemFx() {
+      if (!isHost()) return;
+      sendAction({ type: 'item_fx_done' });
+    }
+
+    function maybeShowItemFx() {
+      const overlay = document.getElementById('itemFxOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'item_fx') {
+        if (itemFxTimer) {
+          clearTimeout(itemFxTimer);
+          itemFxTimer = null;
+        }
+        overlay.classList.remove('show', 'landed');
+        return;
+      }
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (document.getElementById('diceOverlay').classList.contains('show')) return;
+      if (document.getElementById('ejectOverlay').classList.contains('show')) return;
+      if (awaiting.token && awaiting.token === lastItemFxToken) {
+        if (!overlay.classList.contains('show')) overlay.classList.add('show');
+        return;
+      }
+      lastItemFxToken = awaiting.token || `fx-${awaiting.itemId}-${awaiting.actorNr}`;
+      playItemFx(awaiting);
+    }
+
+    function playItemFx(awaiting) {
+      const overlay = document.getElementById('itemFxOverlay');
+      const title = document.getElementById('itemFxTitle');
+      const sub = document.getElementById('itemFxSub');
+      const stage = document.getElementById('itemFxStage');
+      const result = document.getElementById('itemFxResult');
+      if (itemFxTimer) {
+        clearTimeout(itemFxTimer);
+        itemFxTimer = null;
+      }
+
+      const itemName = awaiting.itemName || '道具';
+      const who = awaiting.name || '玩家';
+      const mine = Number(awaiting.actorNr) === Number(myActorNr);
+      title.textContent = itemName;
+      sub.textContent = `${who} 发动效果…`;
+      result.textContent = '';
+      overlay.classList.add('show');
+      overlay.classList.remove('landed');
+
+      let stageHtml = '';
+      let resultText = '';
+      const id = awaiting.itemId;
+
+      if (id === 'lucky_coin') {
+        if (awaiting.hidden || !mine) {
+          stageHtml = `<div class="fx-icon fx-draw">＋2</div>`;
+          resultText = `${who} 抽取了 2 张道具`;
+        } else {
+          const cards = (awaiting.drawn || []).map((cid) => {
+            const it = itemMeta(cid);
+            return it.art
+              ? `<div class="fx-mini-card"><img src="${it.art}" alt="${it.name}"></div>`
+              : `<div class="fx-mini-card fallback">${it.glyph}<span>${it.name}</span></div>`;
+          }).join('');
+          stageHtml = `<div class="fx-card-row">${cards || '<div class="fx-icon fx-draw">＋2</div>'}</div>`;
+          resultText = `抽到 ${(awaiting.drawn || []).map((cid) => itemMeta(cid).name).join('、') || '道具'}`;
+        }
+      } else if (id === 'bandage') {
+        stageHtml = `<div class="fx-icon fx-heal">♥</div>`;
+        resultText = `${who} 回复 1 点血量`;
+      } else if (id === 'inspect' || id === 'peek_top') {
+        const pos = (awaiting.peekIndex || 0) + 1;
+        if (awaiting.hidden || !mine) {
+          stageHtml = `<div class="fx-shell unknown"><span>?</span></div>`;
+          resultText = id === 'peek_top'
+            ? `${who} 查看了弹药堆顶（仅本人可见）`
+            : `${who} 检视了第 ${pos} 发（仅本人可见）`;
+        } else {
+          const b = awaiting.bullet;
+          const cls = b === 'live' ? 'live' : b === 'blank' ? 'blank' : 'special';
+          const mark = b === 'live' ? '实' : b === 'blank' ? '空' : '特';
+          stageHtml = `<div class="fx-shell ${cls} reveal"><span>${mark}</span><small>${bulletLabel(b)}</small></div>`;
+          resultText = id === 'peek_top'
+            ? `堆顶是【${bulletLabel(b)}】`
+            : `第 ${pos} 发是【${bulletLabel(b)}】`;
+        }
+      } else if (id === 'shotgun') {
+        stageHtml = `<div class="fx-icon fx-shotgun">霰</div>`;
+        resultText = '下一发实弹伤害 ×2';
+      } else if (id === 'swap') {
+        stageHtml = `<div class="fx-swap"><span class="fx-shell unknown"><span>${awaiting.swapFrom || '?'}</span></span><span class="fx-swap-arrow">⇄</span><span class="fx-shell unknown"><span>${awaiting.swapTo || '?'}</span></span></div>`;
+        resultText = `交换第 ${awaiting.swapFrom} 发 ↔ 第 ${awaiting.swapTo} 发`;
+      } else if (id === 'reverse') {
+        stageHtml = `<div class="fx-icon fx-reverse">实 ⇄ 空</div>`;
+        resultText = '下一发实弹与空弹互换';
+      } else if (id === 'bind') {
+        stageHtml = `<div class="fx-icon fx-bind">捆</div>`;
+        resultText = `${awaiting.targetName || '目标'} 下一回合无法行动`;
+      } else if (id === 'double_arrow') {
+        if (awaiting.unlock) {
+          stageHtml = `<div class="fx-icon fx-unlink">解</div>`;
+          resultText = '连锁已解除';
+        } else {
+          stageHtml = `<div class="fx-icon fx-link">雕</div>`;
+          resultText = `连锁：${(awaiting.linkNames || []).join('、') || '无'}`;
+        }
+      } else {
+        stageHtml = `<div class="fx-icon">✦</div>`;
+        resultText = `${who} 使用了【${itemName}】`;
+      }
+
+      stage.innerHTML = stageHtml;
+      // 入场动画帧
+      requestAnimationFrame(() => overlay.classList.add('play'));
+
+      itemFxTimer = setTimeout(() => {
+        overlay.classList.add('landed');
+        result.textContent = resultText;
+        sub.textContent = '效果结算';
+        itemFxTimer = setTimeout(() => {
+          overlay.classList.remove('show', 'landed', 'play');
+          stage.innerHTML = '';
+          itemFxTimer = null;
+          finishItemFx();
+        }, 1100);
+      }, 1200);
     }
 
     function finishFirstPlayerSpin() {
@@ -780,6 +1116,9 @@
       }
       if (document.getElementById('revealOverlay').classList.contains('show')) return;
       if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (document.getElementById('diceOverlay').classList.contains('show')) return;
+      if (document.getElementById('ejectOverlay').classList.contains('show')) return;
+      if (document.getElementById('itemFxOverlay').classList.contains('show')) return;
       if (awaiting.token && awaiting.token === lastSpinToken) {
         if (!overlay.classList.contains('show')) overlay.classList.add('show');
         return;
@@ -880,7 +1219,7 @@
       document.getElementById('lobbyPanel').style.display = view.phase === 'ended' ? '' : 'none';
       document.getElementById('gamePanel').classList.add('active');
 
-      const curNr = view.turnOrder[view.currentTurn];
+      const curNr = Number(view.turnOrder[view.currentTurn]);
       const fourPlayer = view.players.length === 4;
       const panel = document.getElementById('gamePanel');
       panel.classList.toggle('layout-cross', fourPlayer);
@@ -904,11 +1243,12 @@
       // 中央弹药信息：已射出 / 本轮装弹
       const loadout = view.loadout || { live: 0, blank: 0, special: 0 };
       const fired = view.fired || { live: 0, blank: 0, special: 0 };
+      const showSpecial = view.players.some((p) => p.alive && p.role === 'silver_spike');
       document.getElementById('loadoutRow').innerHTML = `
         <span class="ammo-legend">子弹数</span>
         <span class="ammo-chip live"><i></i>实弹 ${fired.live}/${loadout.live}</span>
         <span class="ammo-chip blank"><i></i>空弹 ${fired.blank}/${loadout.blank}</span>
-        <span class="ammo-chip special"><i></i>特殊 ${fired.special}/${loadout.special}</span>
+        ${showSpecial ? `<span class="ammo-chip special"><i></i>特殊 ${fired.special}/${loadout.special}</span>` : ''}
       `;
 
       const cyl = document.getElementById('cylinder');
@@ -929,10 +1269,10 @@
       document.getElementById('effectPills').innerHTML = pills.join('');
 
       const me = view.players.find((p) => p.actorNr === myActorNr);
-      const myTurn = view.phase === 'playing' && !view.awaiting && curNr === myActorNr;
+      const myTurn = view.phase === 'playing' && !view.awaiting && curNr === Number(myActorNr);
 
       function seatHtml(p, shotSide) {
-        const isMe = p.actorNr === myActorNr;
+        const isMe = Number(p.actorNr) === Number(myActorNr);
         const ally = me && !isMe && view.mode === 'team' && p.team === me.team;
         const cls = [
           'hero-seat',
@@ -1156,6 +1496,9 @@
       lastRevealKey = '';
       lastSpinToken = '';
       lastAmmoToken = '';
+      lastDiceToken = '';
+      lastEjectToken = '';
+      lastItemFxToken = '';
       initPlayers(gameState, actors, mode);
       if (mode === 'team') {
         gameState.players.forEach((p, i) => { p.team = i % 2; });
@@ -1287,21 +1630,28 @@
     }
 
     function tryShootAt(targetActorNr) {
-      if (!view || view.phase !== 'playing' || view.awaiting) return;
-      if (view.turnOrder[view.currentTurn] !== myActorNr) return;
-      const target = view.players.find((p) => p.actorNr === targetActorNr);
+      if (!view || view.phase !== 'playing') return;
+      if (view.awaiting) {
+        alert('当前有其他结算进行中，稍后再开枪。');
+        return;
+      }
+      if (Number(view.turnOrder[view.currentTurn]) !== Number(myActorNr)) {
+        alert(`还没轮到你（当前行动 #${view.turnOrder[view.currentTurn]}）`);
+        return;
+      }
+      const target = view.players.find((p) => Number(p.actorNr) === Number(targetActorNr));
       if (!target || !target.alive) return;
 
-      const me = view.players.find((p) => p.actorNr === myActorNr);
-      const toSelf = targetActorNr === myActorNr;
+      const me = view.players.find((p) => Number(p.actorNr) === Number(myActorNr));
+      const toSelf = Number(targetActorNr) === Number(myActorNr);
       let nightOwlTargetNr;
       let confirmMsg = toSelf
         ? `确认对自己（${playerLabel(myActorNr)}）开枪？`
         : `确认对 ${playerLabel(targetActorNr)} 开枪？`;
 
       if (toSelf && me && me.role === 'night_owl' && me.hp <= 4) {
-        const foes = view.players.filter((p) => p.alive && p.actorNr !== myActorNr);
-        let link = selectedTarget && foes.some((f) => f.actorNr === selectedTarget)
+        const foes = view.players.filter((p) => p.alive && Number(p.actorNr) !== Number(myActorNr));
+        let link = selectedTarget && foes.some((f) => Number(f.actorNr) === Number(selectedTarget))
           ? selectedTarget
           : (foes.length === 1 ? foes[0].actorNr : null);
         if (!link) {
@@ -1313,7 +1663,7 @@
       }
 
       if (!confirm(confirmMsg)) return;
-      sendAction({ type: 'shoot', targetActorNr, nightOwlTargetNr });
+      sendAction({ type: 'shoot', targetActorNr: Number(targetActorNr), nightOwlTargetNr });
       selectedHand = [];
     }
 
