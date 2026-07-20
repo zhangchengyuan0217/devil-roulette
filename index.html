@@ -68,30 +68,32 @@
     <!-- 非四人布局时，对手仍可显示在上方条 -->
     <div class="opponents" id="opponents"></div>
 
-    <div class="me-zone">
-      <div class="me-seat-col" id="mySeat"></div>
-      <div class="hand-block">
-        <div class="hand-label">我的道具手牌（每轮开局抽 2 张，点选后可使用）</div>
-        <div class="hand-fan" id="hand"></div>
-        <div class="private-toast" id="privateInfo"></div>
-        <div class="gunpowder-dock" id="gunpowderDock" hidden>
-          <div class="gunpowder-dock-label">火药 · 弹药堆底部</div>
-          <div class="gunpowder-dock-shells" id="gunpowderDockShells"></div>
+    <div class="bottom-panel">
+      <div class="me-zone">
+        <div class="me-seat-col" id="mySeat"></div>
+        <div class="hand-block">
+          <div class="hand-label">我的道具手牌 <span class="hand-hint">点选上移 · 每次用 1 张 · 本回合可连用</span></div>
+          <div class="hand-fan" id="hand"></div>
+          <div class="private-toast" id="privateInfo"></div>
+          <div class="gunpowder-dock" id="gunpowderDock" hidden>
+            <div class="gunpowder-dock-label">火药 · 弹药堆底部</div>
+            <div class="gunpowder-dock-shells" id="gunpowderDockShells"></div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="actions-dock" id="actionBar">
-      <button id="useItemBtn" type="button" disabled>使用道具</button>
-      <button id="ironRoseBtn" type="button" disabled style="display:none">铁玫瑰</button>
-      <span id="snakeBar" style="display:none;align-items:center;gap:8px">
-        <span class="meta" id="snakeHint"></span>
-        <button id="snakeBtn" class="primary" type="button">复制（-1血）</button>
-        <button id="snakePassBtn" type="button">放弃</button>
-      </span>
-      <span id="awaitBar" style="display:none;align-items:center;gap:8px">
-        <span class="meta" id="awaitHint"></span>
-      </span>
+      <div class="actions-dock" id="actionBar">
+        <button id="useItemBtn" type="button" disabled>使用道具</button>
+        <button id="ironRoseBtn" type="button" disabled style="display:none">铁玫瑰</button>
+        <span id="snakeBar" style="display:none;align-items:center;gap:8px">
+          <span class="meta" id="snakeHint"></span>
+          <button id="snakeBtn" class="primary" type="button">复制（-1血）</button>
+          <button id="snakePassBtn" type="button">放弃</button>
+        </span>
+        <span id="awaitBar" style="display:none;align-items:center;gap:8px">
+          <span class="meta" id="awaitHint"></span>
+        </span>
+      </div>
     </div>
   </section>
 
@@ -1649,6 +1651,7 @@
       if (!view || view.phase === 'lobby') {
         document.getElementById('lobbyPanel').style.display = '';
         document.getElementById('gamePanel').classList.remove('active');
+        document.body.classList.remove('phase-ended');
         if (!offlineSim) {
           revealedOnce = false;
           lastRevealKey = '';
@@ -1658,6 +1661,7 @@
 
       document.getElementById('lobbyPanel').style.display = view.phase === 'ended' ? '' : 'none';
       document.getElementById('gamePanel').classList.add('active');
+      document.body.classList.toggle('phase-ended', view.phase === 'ended');
 
       const curNr = Number(view.turnOrder[view.currentTurn]);
       const fourPlayer = view.players.length === 4;
@@ -1835,9 +1839,14 @@
         bindSeats(document.getElementById('mySeat'));
       }
 
-      // 手牌扇形
+      // 手牌扇形（斗地主式：点选上移固定；普通道具单选，铁玫瑰最多 2 张）
       const myHand = (view.me && view.me.hand) || [];
       const handEl = document.getElementById('hand');
+      const maxHandSelect = me && me.role === 'iron_rose' ? 2 : 1;
+      selectedHand = selectedHand.filter((i) => i >= 0 && i < myHand.length);
+      if (selectedHand.length > maxHandSelect) {
+        selectedHand = selectedHand.slice(-maxHandSelect);
+      }
       handEl.innerHTML = myHand.map((id, i) => {
         const it = itemMeta(id);
         if (it.art) {
@@ -1854,8 +1863,16 @@
       handEl.querySelectorAll('.item-card').forEach((el) => {
         el.onclick = () => {
           const i = Number(el.dataset.i);
-          if (selectedHand.includes(i)) selectedHand = selectedHand.filter((x) => x !== i);
-          else selectedHand.push(i);
+          const pos = selectedHand.indexOf(i);
+          if (pos >= 0) {
+            selectedHand = selectedHand.filter((x) => x !== i);
+          } else if (maxHandSelect === 1) {
+            selectedHand = [i];
+          } else if (selectedHand.length < maxHandSelect) {
+            selectedHand = selectedHand.concat(i);
+          } else {
+            selectedHand = selectedHand.slice(1).concat(i);
+          }
           render();
         };
       });
