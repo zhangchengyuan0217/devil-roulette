@@ -2142,10 +2142,15 @@
       document.body.classList.toggle('phase-ended', view.phase === 'ended');
 
       const curNr = Number(view.turnOrder[view.currentTurn]);
-      const fourPlayer = view.players.length === 4;
+      const playerCount = view.players.length;
+      const fourPlayer = playerCount === 4;
+      const duel = playerCount === 2;
+      const trio = playerCount === 3;
       const panel = document.getElementById('gamePanel');
       panel.classList.toggle('layout-cross', fourPlayer);
-      panel.classList.toggle('layout-classic', !fourPlayer);
+      panel.classList.toggle('layout-duel', duel);
+      panel.classList.toggle('layout-trio', trio);
+      panel.classList.toggle('layout-classic', !fourPlayer && !duel && !trio);
 
       document.getElementById('roundInfo').innerHTML =
         `<strong>第 ${view.round} 轮</strong> · 弹药剩余 ${view.magazineCount}` +
@@ -2153,7 +2158,11 @@
           ? (view.mode === 'team'
             ? ' · 上下队友 · <span style="color:#ff8f88">红队</span> vs <span style="color:#8eb6ff">蓝队</span>'
             : ' · 四人环桌')
-          : '') +
+          : duel
+            ? ' · 双人对决'
+            : trio
+              ? ' · 三人混战'
+              : '') +
         (view.phase === 'ended'
           ? (view.winner
             ? ` · <strong style="color:#6fbf8a">玩家<span class="seat-nr">#${view.winner}</span> 获胜</strong>`
@@ -2309,6 +2318,26 @@
         paintSlot(document.getElementById('seatLeft'), leftP, view.mode === 'team' ? foeTeamClass : '', foeTagL);
         paintSlot(document.getElementById('seatRight'), rightP, view.mode === 'team' ? foeTeamClass : '', foeTagR);
 
+        document.getElementById('opponents').innerHTML = '';
+        document.getElementById('mySeat').innerHTML = seatHtml(me);
+        bindSeats(document.getElementById('mySeat'));
+      } else if (duel && me) {
+        const foe = view.players.find((p) => p.actorNr !== me.actorNr) || null;
+        paintSlot(document.getElementById('seatTop'), foe, '', '对手');
+        paintSlot(document.getElementById('seatBottom'), null, '', '');
+        paintSlot(document.getElementById('seatLeft'), null, '', '');
+        paintSlot(document.getElementById('seatRight'), null, '', '');
+        document.getElementById('opponents').innerHTML = '';
+        document.getElementById('mySeat').innerHTML = seatHtml(me);
+        bindSeats(document.getElementById('mySeat'));
+      } else if (trio && me) {
+        const others = view.players
+          .filter((p) => p.actorNr !== me.actorNr)
+          .sort((a, b) => a.actorNr - b.actorNr);
+        paintSlot(document.getElementById('seatTop'), null, '', '');
+        paintSlot(document.getElementById('seatBottom'), null, '', '');
+        paintSlot(document.getElementById('seatLeft'), others[0] || null, '', '对手');
+        paintSlot(document.getElementById('seatRight'), others[1] || null, '', '对手');
         document.getElementById('opponents').innerHTML = '';
         document.getElementById('mySeat').innerHTML = seatHtml(me);
         bindSeats(document.getElementById('mySeat'));

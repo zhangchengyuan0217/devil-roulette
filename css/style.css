@@ -281,8 +281,44 @@ button.primary {
   overflow: visible;
 }
 
-.table-wrap.layout-cross .opponents { display: none; }
-.table-wrap.layout-classic .board-arena { display: none; }
+.table-wrap.layout-cross .opponents,
+.table-wrap.layout-duel .opponents,
+.table-wrap.layout-trio .opponents {
+  display: none;
+}
+
+/* 2 人：对面一座 + 中央毡桌 */
+.table-wrap.layout-duel .board-arena {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "top"
+    "felt";
+  max-width: min(720px, 100%);
+}
+
+.table-wrap.layout-duel .seat-left,
+.table-wrap.layout-duel .seat-right,
+.table-wrap.layout-duel .seat-bottom {
+  display: none;
+}
+
+.table-wrap.layout-duel .seat-top {
+  max-width: 168px;
+  justify-self: center;
+}
+
+/* 3 人：左右对手 + 中央毡桌 */
+.table-wrap.layout-trio .board-arena {
+  grid-template-columns: minmax(128px, 168px) minmax(0, 1fr) minmax(128px, 168px);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "left felt right";
+}
+
+.table-wrap.layout-trio .seat-top,
+.table-wrap.layout-trio .seat-bottom {
+  display: none;
+}
 
 .round-banner {
   text-align: center;
@@ -3112,7 +3148,8 @@ button.primary {
   }
 
   /* 十字座位拉满宽度，左右列加宽以免裁切 */
-  .board-arena {
+  .table-wrap.layout-cross .board-arena,
+  .table-wrap.layout-trio .board-arena {
     grid-template-columns: minmax(88px, 120px) minmax(0, 1fr) minmax(88px, 120px);
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
@@ -3125,6 +3162,24 @@ button.primary {
     overflow: hidden;
     align-items: center;
     justify-items: center;
+  }
+
+  .table-wrap.layout-trio .board-arena {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "left felt right";
+  }
+
+  .table-wrap.layout-duel .board-arena {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "felt";
+    max-width: 100%;
+    width: 100%;
+    gap: 0;
+    padding: 0 2px;
+    overflow: hidden;
   }
 
   .seat-top {
