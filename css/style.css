@@ -1861,6 +1861,167 @@ button.primary {
 
 .dice-overlay.landed .dice-result { opacity: 1; }
 
+/* —— 开枪弹药全屏揭示（黑卡自上而下揭开） —— */
+.shot-reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(4, 3, 2, 0.92);
+  padding: 24px;
+}
+
+.shot-reveal-overlay.show {
+  display: flex;
+}
+
+.shot-reveal-title {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  color: var(--gold);
+  letter-spacing: 0.16em;
+}
+
+.shot-reveal-sub {
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-align: center;
+  max-width: 90vw;
+}
+
+.shot-reveal-card {
+  position: relative;
+  width: min(220px, 56vw);
+  height: min(308px, 78vw);
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid rgba(212, 168, 87, 0.45);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.65);
+  transform: translateY(12px) scale(0.94);
+  opacity: 0;
+  transition: transform 0.35s ease, opacity 0.35s ease;
+  background: #050403;
+}
+
+.shot-reveal-card.ready {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.shot-reveal-back {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(212, 168, 87, 0.12), transparent 55%),
+    repeating-linear-gradient(45deg, #2a1a12 0 10px, #160f0b 10px 20px);
+  z-index: 1;
+}
+
+.shot-reveal-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  z-index: 2;
+}
+
+.shot-reveal-shutter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100%;
+  z-index: 3;
+  background: #050403;
+  box-shadow: inset 0 -1px 0 rgba(212, 168, 87, 0.2);
+  transition: height 1.45s cubic-bezier(0.22, 0.7, 0.2, 1);
+  pointer-events: none;
+}
+
+.shot-reveal-overlay.reveal .shot-reveal-shutter {
+  height: 0%;
+}
+
+.shot-reveal-name {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: 0.12em;
+  min-height: 1.4em;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.shot-reveal-overlay.reveal .shot-reveal-name {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.shot-reveal-overlay.is-live .shot-reveal-name {
+  color: #ff8f86;
+}
+
+.shot-reveal-overlay.is-blank .shot-reveal-name {
+  color: #e6d7b8;
+}
+
+.shot-reveal-overlay.is-special .shot-reveal-name {
+  color: #7ec8e3;
+}
+
+.shot-reveal-result {
+  color: rgba(240, 230, 216, 0.88);
+  font-size: 0.88rem;
+  text-align: center;
+  max-width: min(420px, 90vw);
+  line-height: 1.45;
+  min-height: 1.4em;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.shot-reveal-overlay.landed .shot-reveal-result {
+  opacity: 1;
+}
+
+.shot-reveal-overlay.is-live .shot-reveal-card {
+  border-color: rgba(212, 84, 74, 0.7);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(212, 84, 74, 0.25);
+}
+
+.shot-reveal-overlay.is-blank .shot-reveal-card {
+  border-color: rgba(197, 183, 154, 0.65);
+}
+
+.shot-reveal-overlay.is-special .shot-reveal-card {
+  border-color: rgba(126, 200, 227, 0.7);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(126, 200, 227, 0.25);
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 960px) {
+  .shot-reveal-card {
+    width: min(140px, 28vw);
+    height: min(196px, 40vw);
+  }
+  .shot-reveal-title {
+    font-size: 1.05rem;
+  }
+  .shot-reveal-name {
+    font-size: 1.05rem;
+  }
+  .shot-reveal-sub,
+  .shot-reveal-result {
+    font-size: 0.72rem;
+  }
+}
+
 /* —— 退弹弃置动画 —— */
 .eject-overlay {
   position: fixed;

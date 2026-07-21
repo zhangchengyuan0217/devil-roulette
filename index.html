@@ -180,6 +180,18 @@
     <div class="eject-result" id="ejectResult"></div>
   </div>
 
+  <div class="shot-reveal-overlay" id="shotRevealOverlay">
+    <div class="shot-reveal-title">开枪揭示</div>
+    <div class="shot-reveal-sub" id="shotRevealSub">抽出弹药…</div>
+    <div class="shot-reveal-card" id="shotRevealCard">
+      <div class="shot-reveal-back" aria-hidden="true"></div>
+      <img class="shot-reveal-img" id="shotRevealImg" alt="" draggable="false">
+      <div class="shot-reveal-shutter" id="shotRevealShutter" aria-hidden="true"></div>
+    </div>
+    <div class="shot-reveal-name" id="shotRevealName"></div>
+    <div class="shot-reveal-result" id="shotRevealResult"></div>
+  </div>
+
   <div class="item-fx-overlay" id="itemFxOverlay">
     <div class="item-fx-title" id="itemFxTitle">道具效果</div>
     <div class="item-fx-sub" id="itemFxSub"></div>
@@ -319,6 +331,8 @@
     let diceAnimTimer = null;
     let lastEjectToken = '';
     let ejectAnimTimer = null;
+    let lastShotRevealToken = '';
+    let shotRevealTimer = null;
     let lastItemFxToken = '';
     let itemFxTimer = null;
     let snakeTimer = null;
@@ -533,6 +547,7 @@
       if (gameState.awaiting && gameState.awaiting.type === 'ammo_draw') return;
       if (gameState.awaiting && gameState.awaiting.type === 'painkiller_dice') return;
       if (gameState.awaiting && gameState.awaiting.type === 'eject_anim') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'shot_reveal') return;
       if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel_reveal') return;
 
@@ -663,6 +678,7 @@
       lastAmmoToken = '';
       lastDiceToken = '';
       lastEjectToken = '';
+      lastShotRevealToken = '';
       lastItemFxToken = '';
       selectedHand = [];
       selectedTarget = null;
@@ -711,6 +727,10 @@
         clearTimeout(ejectAnimTimer);
         ejectAnimTimer = null;
       }
+      if (shotRevealTimer) {
+        clearTimeout(shotRevealTimer);
+        shotRevealTimer = null;
+      }
       if (itemFxTimer) {
         clearTimeout(itemFxTimer);
         itemFxTimer = null;
@@ -719,6 +739,7 @@
       lastAmmoToken = '';
       lastDiceToken = '';
       lastEjectToken = '';
+      lastShotRevealToken = '';
       lastItemFxToken = '';
       offlineSim = false;
       gameState = null;
@@ -826,6 +847,7 @@
       maybeShowAmmoDraw();
       maybeShowPainkillerDice();
       maybeShowEjectAnim();
+      maybeShowShotReveal();
       maybeShowItemFx();
       maybeShowFirstSpin();
       maybeShowDbDeclare();
@@ -907,11 +929,11 @@
     function clearGameOverlays() {
       [
         'revealOverlay', 'firstSpinOverlay', 'ammoDrawOverlay', 'diceOverlay',
-        'ejectOverlay', 'itemFxOverlay', 'swapPickOverlay', 'playerPickOverlay',
+        'ejectOverlay', 'shotRevealOverlay', 'itemFxOverlay', 'swapPickOverlay', 'playerPickOverlay',
         'discardHandOverlay', 'dbDeclareOverlay', 'dbRevealOverlay', 'shootConfirmOverlay'
       ].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.classList.remove('show', 'landed', 'success', 'fail');
+        if (el) el.classList.remove('show', 'landed', 'success', 'fail', 'reveal', 'is-live', 'is-blank', 'is-special');
       });
     }
 
@@ -1143,6 +1165,7 @@
       maybeShowAmmoDraw();
       maybeShowPainkillerDice();
       maybeShowEjectAnim();
+      maybeShowShotReveal();
       maybeShowItemFx();
       maybeShowFirstSpin();
       maybeShowDbDeclare();
@@ -1419,6 +1442,97 @@
           finishEjectAnim();
         }, 1100);
       }, 900);
+    }
+
+    function finishShotReveal() {
+      sendAction({ type: 'shot_reveal_done' });
+    }
+
+    function bulletArtPath(kind) {
+      if (kind === 'live') return 'assets/bullets/live.jpg';
+      if (kind === 'blank') return 'assets/bullets/blank.jpg';
+      if (kind === 'special') return 'assets/bullets/special.jpg';
+      return '';
+    }
+
+    function maybeShowShotReveal() {
+      const overlay = document.getElementById('shotRevealOverlay');
+      const awaiting = view && view.awaiting;
+      if (!awaiting || awaiting.type !== 'shot_reveal') {
+        if (shotRevealTimer) return;
+        overlay.classList.remove('show', 'reveal', 'landed', 'is-live', 'is-blank', 'is-special');
+        return;
+      }
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+      if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (awaiting.token && awaiting.token === lastShotRevealToken) {
+        if (!overlay.classList.contains('show')) overlay.classList.add('show');
+        return;
+      }
+      lastShotRevealToken = awaiting.token || `shot-${awaiting.actorNr}-${awaiting.raw}-${awaiting.resolved}`;
+      playShotReveal(awaiting);
+    }
+
+    function playShotReveal(awaiting) {
+      const overlay = document.getElementById('shotRevealOverlay');
+      const card = document.getElementById('shotRevealCard');
+      const img = document.getElementById('shotRevealImg');
+      const shutter = document.getElementById('shotRevealShutter');
+      const sub = document.getElementById('shotRevealSub');
+      const nameEl = document.getElementById('shotRevealName');
+      const resultEl = document.getElementById('shotRevealResult');
+
+      if (shotRevealTimer) {
+        clearTimeout(shotRevealTimer);
+        shotRevealTimer = null;
+      }
+
+      const showKind = awaiting.raw || awaiting.resolved;
+      const rawLabel = bulletLabel(awaiting.raw);
+      const resolvedLabel = bulletLabel(awaiting.resolved);
+      const who = awaiting.name || `玩家#${awaiting.actorNr}`;
+      const targetName = awaiting.toSelf ? '自己' : (awaiting.targetName || '目标');
+      const kindClass = showKind === 'live' ? 'is-live' : showKind === 'blank' ? 'is-blank' : 'is-special';
+      const art = bulletArtPath(showKind);
+
+      img.removeAttribute('src');
+      if (art) {
+        img.src = art;
+        img.alt = rawLabel;
+      }
+      nameEl.textContent = '';
+      resultEl.textContent = '';
+      sub.textContent = `${who} 向 ${targetName} 开枪…`;
+
+      overlay.classList.remove('reveal', 'landed', 'is-live', 'is-blank', 'is-special');
+      overlay.classList.add('show');
+      card.classList.remove('ready');
+      if (shutter) shutter.style.height = '100%';
+
+      // 黑卡先入场，再自上而下揭开弹面
+      requestAnimationFrame(() => {
+        card.classList.add('ready');
+        shotRevealTimer = setTimeout(() => {
+          overlay.classList.add('reveal', kindClass);
+          if (shutter) shutter.style.height = '0%';
+          nameEl.textContent = rawLabel;
+          let detail = `抽出【${rawLabel}】`;
+          if (awaiting.raw !== awaiting.resolved) {
+            detail += ` → 结算为【${resolvedLabel}】`;
+          }
+          if (awaiting.shotgunUsed) detail += ' · 霰弹枪×2';
+          resultEl.textContent = detail;
+          shotRevealTimer = setTimeout(() => {
+            overlay.classList.add('landed');
+            shotRevealTimer = setTimeout(() => {
+              overlay.classList.remove('show', 'reveal', 'landed', 'is-live', 'is-blank', 'is-special');
+              card.classList.remove('ready');
+              shotRevealTimer = null;
+              finishShotReveal();
+            }, 900);
+          }, 1500);
+        }, 480);
+      });
     }
 
     function finishItemFx() {
@@ -2390,6 +2504,7 @@
       lastAmmoToken = '';
       lastDiceToken = '';
       lastEjectToken = '';
+      lastShotRevealToken = '';
       lastItemFxToken = '';
       initPlayers(gameState, actors, mode);
       if (mode === 'team') {
@@ -3069,7 +3184,8 @@
         painkiller_dice: 'painkiller_dice_done',
         eject_anim: 'eject_done',
         item_fx: 'item_fx_done',
-        double_barrel_reveal: 'double_barrel_done'
+        double_barrel_reveal: 'double_barrel_done',
+        shot_reveal: 'shot_reveal_done'
       };
       const interactiveTypes = {
         discard_hand: true,

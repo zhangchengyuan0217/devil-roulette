@@ -10,7 +10,8 @@ const AWAITING_ANIM_MS = {
   painkiller_dice: 2800,
   eject_anim: 2800,
   item_fx: 3200,
-  double_barrel_reveal: 3800
+  double_barrel_reveal: 3800,
+  shot_reveal: 4200
 };
 
 /** 需玩家操作的窗口超时（弃牌 / 双管 / 响尾蛇施放） */
@@ -54,6 +55,9 @@ function resolveExpiredAwaiting(state) {
       return true;
     case 'double_barrel_reveal':
       continueAfterDoubleBarrelReveal(state);
+      return true;
+    case 'shot_reveal':
+      continueAfterShotReveal(state);
       return true;
     case 'discard_hand':
       timeoutDiscardHand(state);
@@ -648,24 +652,79 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
 
   const raw = state.magazine.pop();
   const resolved = resolveBulletType(state, shooter, raw);
-  // 按实际抽出的弹种计入已射出（物理弹种）
   if (raw === BULLET.LIVE) state.fired.live += 1;
   else if (raw === BULLET.BLANK) state.fired.blank += 1;
   else if (raw === BULLET.SPECIAL) state.fired.special += 1;
+
+  let dmg = 1;
+  let shotgunUsed = false;
+  if (resolved === BULLET.LIVE && state.effects.shotgunNext) {
+    dmg = 2;
+    shotgunUsed = true;
+    state.effects.shotgunNext = false;
+  } else if (resolved !== BULLET.LIVE) {
+    state.effects.shotgunNext = false;
+  }
+
+  let owlTarget = nightOwlTargetNr;
+  if (
+    resolved === BULLET.LIVE &&
+    toSelf &&
+    shooter.role === 'night_owl' &&
+    shooter.hp <= 4 &&
+    !owlTarget
+  ) {
+    const foes = alivePlayers(state).filter((p) => p.actorNr !== shooter.actorNr);
+    owlTarget = foes[0] && foes[0].actorNr;
+  }
+
+  state.awaiting = stampAwaitingExpiry(
+    {
+      type: 'shot_reveal',
+      token: `shot-${state.round}-${actorNr}-${raw}-${resolved}-${Date.now()}`,
+      actorNr: shooter.actorNr,
+      name: shooter.name,
+      targetActorNr: target.actorNr,
+      targetName: target.name,
+      toSelf,
+      raw,
+      resolved,
+      dmg,
+      shotgunUsed,
+      nightOwlTargetNr: owlTarget || null,
+      magazineLeft: state.magazine.length
+    },
+    'shot_reveal'
+  );
+  return { ok: true };
+}
+
+function continueAfterShotReveal(state) {
+  if (!state.awaiting || state.awaiting.type !== 'shot_reveal') {
+    return { ok: true, reason: '已结算' };
+  }
+  const pending = state.awaiting;
+  state.awaiting = null;
+
+  const shooter = getPlayer(state, pending.actorNr);
+  const target = getPlayer(state, pending.targetActorNr);
+  if (!shooter || !target) return { ok: false, reason: '玩家不存在' };
+
+  const raw = pending.raw;
+  const resolved = pending.resolved;
+  const toSelf = !!pending.toSelf;
+  const dmg = pending.dmg || 1;
+  let nightOwlTargetNr = pending.nightOwlTargetNr;
+
   logState(
     state,
     `${shooter.name} 向 ${toSelf ? '自己' : target.name} 开枪：抽出【${bulletLabel(raw)}】→ 结算为【${bulletLabel(resolved)}】。`
   );
+  if (pending.shotgunUsed) {
+    logState(state, '霰弹枪生效：伤害 2 点。');
+  }
 
   let extraTurn = false;
-  let dmg = 1;
-  if (resolved === BULLET.LIVE && state.effects.shotgunNext) {
-    dmg = 2;
-    state.effects.shotgunNext = false;
-    logState(state, '霰弹枪生效：伤害 2 点。');
-  } else if (resolved !== BULLET.LIVE) {
-    state.effects.shotgunNext = false;
-  }
 
   if (resolved === BULLET.SPECIAL) {
     const silver = findSilverSpike(state);
@@ -679,9 +738,6 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
         logState(state, `银刺抽取一张道具。`);
       }
     }
-    if (!toSelf || resolved === BULLET.SPECIAL) {
-      // 特殊弹打自己/别人都结束回合（规则未写空弹续回合逻辑）
-    }
   } else if (resolved === BULLET.LIVE) {
     if (toSelf && shooter.role === 'night_owl' && shooter.hp <= 4) {
       if (!nightOwlTargetNr) {
@@ -689,8 +745,6 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
         nightOwlTargetNr = foes[0] && foes[0].actorNr;
       }
       const foe = getPlayer(state, nightOwlTargetNr);
-      // 夜枭：自己与所选对手同时扣血；连锁规则与 applyDamage 对齐
-      // （仅扩展受伤者各自所在的配对，并清除这些配对）
       const amount = dmg;
       const primary = [shooter];
       if (foe && foe.alive) primary.push(foe);
@@ -1390,6 +1444,7 @@ function handleAction(state, actorNr, action) {
       eject_done: 'eject_anim',
       item_fx_done: 'item_fx',
       double_barrel_done: 'double_barrel_reveal',
+      shot_reveal_done: 'shot_reveal',
       awaiting_timeout: true
     };
     if (doneTypes[action.type]) return { ok: true };
@@ -1405,6 +1460,8 @@ function handleAction(state, actorNr, action) {
       return skipDoubleBarrel(state, actorNr);
     case 'double_barrel_done':
       return continueAfterDoubleBarrelReveal(state);
+    case 'shot_reveal_done':
+      return continueAfterShotReveal(state);
     case 'discard_hand':
       return discardHandCards(state, actorNr, action.indexes);
     case 'ammo_draw_done':
