@@ -343,7 +343,6 @@
     let playerPickState = null;
     let discardHandSelected = [];
     let lastDiscardToken = '';
-    let lastSnakeCastToken = '';
     let awaitingWatchdog = null;
     let interactiveCountdownTimer = null;
     let dbDeclareIndex = null;
@@ -476,7 +475,7 @@
         const leftMs = Math.max(0, (view.awaiting.expiresAt || 0) - Date.now());
         const sec = Math.ceil(leftMs / 1000);
         const name = view.awaiting.itemName || '道具';
-        const mine = view.awaiting.actorNr === myActorNr;
+        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
         hint.textContent = mine
           ? `响尾蛇：将【${name}】复制到手牌？ 剩余 ${sec}s`
           : `响尾蛇 #${view.awaiting.actorNr} 抉择中：【${name}】 ${sec}s`;
@@ -485,7 +484,7 @@
       snakeCountdownTimer = setInterval(updateHint, 200);
 
       // 房主或本人负责超时结算，避免卡住
-      if (isHost() || awaiting.actorNr === myActorNr) {
+      if (isHost() || Number(awaiting.actorNr) === Number(myActorNr)) {
         const ms = Math.max(200, (awaiting.expiresAt || Date.now() + 5000) - Date.now());
         snakeTimer = setTimeout(() => {
           snakeTimer = null;
@@ -504,18 +503,14 @@
       if (gameState.awaiting && gameState.awaiting.type === 'eject_anim') return;
       if (gameState.awaiting && gameState.awaiting.type === 'item_fx') return;
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel_reveal') return;
+      if (gameState.awaiting && gameState.awaiting.type === 'shot_reveal') return;
       if (gameState.awaiting && gameState.awaiting.type === 'discard_hand') {
-        if (gameState.awaiting.actorNr === myActorNr) return;
+        if (Number(gameState.awaiting.actorNr) === Number(myActorNr)) return;
         botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 700);
         return;
       }
-      if (gameState.awaiting && gameState.awaiting.type === 'snake_cast') {
-        if (gameState.awaiting.actorNr === myActorNr) return;
-        botTimer = setTimeout(() => { botTimer = null; runBotTurn(); }, 800);
-        return;
-      }
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
-        if (gameState.awaiting.actorNr === myActorNr) return; // 本人手动抉择
+        if (Number(gameState.awaiting.actorNr) === Number(myActorNr)) return; // 本人手动抉择
         botTimer = setTimeout(() => {
           botTimer = null;
           runBotTurn();
@@ -524,7 +519,7 @@
       }
       // 双管声明：机器人自动选
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel') {
-        if (gameState.awaiting.actorNr === myActorNr) return;
+        if (Number(gameState.awaiting.actorNr) === Number(myActorNr)) return;
         botTimer = setTimeout(() => {
           botTimer = null;
           runBotTurn();
@@ -532,8 +527,8 @@
         return;
       }
       const cur = gameState.turnOrder[gameState.currentTurn];
-      if (cur === myActorNr) return;
-      if (gameState.awaiting && gameState.awaiting.actorNr === myActorNr) return;
+      if (Number(cur) === Number(myActorNr)) return;
+      if (gameState.awaiting && Number(gameState.awaiting.actorNr) === Number(myActorNr)) return;
 
       botTimer = setTimeout(() => {
         botTimer = null;
@@ -554,8 +549,8 @@
       // 手牌超限弃牌（机器人）
       if (gameState.awaiting && gameState.awaiting.type === 'discard_hand') {
         const a = gameState.awaiting;
-        if (a.actorNr === myActorNr) return;
-        const bot = gameState.players.find((p) => p.actorNr === a.actorNr);
+        if (Number(a.actorNr) === Number(myActorNr)) return;
+        const bot = gameState.players.find((p) => Number(p.actorNr) === Number(a.actorNr));
         if (!bot) return;
         const idxs = [];
         for (let i = bot.hand.length - 1; i >= 0 && idxs.length < a.need; i--) idxs.push(i);
@@ -567,8 +562,8 @@
       // 响尾蛇窗口（机器人）：复制到手牌，不再施放效果
       if (gameState.awaiting && gameState.awaiting.type === 'rattlesnake') {
         const a = gameState.awaiting;
-        if (a.actorNr === myActorNr) return;
-        const bot = gameState.players.find((p) => p.actorNr === a.actorNr);
+        if (Number(a.actorNr) === Number(myActorNr)) return;
+        const bot = gameState.players.find((p) => Number(p.actorNr) === Number(a.actorNr));
         const willCopy = bot && bot.hp > 1 && Math.random() < 0.45;
         handleAction(gameState, a.actorNr, {
           type: willCopy ? 'rattlesnake_copy' : 'rattlesnake_pass'
@@ -577,19 +572,10 @@
         return;
       }
 
-      // 兼容旧版 snake_cast（现已改为复制到手牌，正常对局不应再出现）
-      if (gameState.awaiting && gameState.awaiting.type === 'snake_cast') {
-        const a = gameState.awaiting;
-        if (a.actorNr === myActorNr) return;
-        handleAction(gameState, a.actorNr, { type: 'rattlesnake_cast', payload: {} });
-        refreshLocalView();
-        return;
-      }
-
       // 双管声明（机器人）
       if (gameState.awaiting && gameState.awaiting.type === 'double_barrel') {
         const a = gameState.awaiting;
-        if (a.actorNr === myActorNr) return;
+        if (Number(a.actorNr) === Number(myActorNr)) return;
         if (Math.random() < 0.2) {
           handleAction(gameState, a.actorNr, { type: 'double_barrel_skip' });
         } else {
@@ -604,8 +590,8 @@
       }
 
       const curNr = gameState.turnOrder[gameState.currentTurn];
-      if (curNr === myActorNr) return;
-      const bot = gameState.players.find((p) => p.actorNr === curNr);
+      if (Number(curNr) === Number(myActorNr)) return;
+      const bot = gameState.players.find((p) => Number(p.actorNr) === Number(curNr));
       if (!bot || !bot.alive) {
         refreshLocalView();
         return;
@@ -617,7 +603,9 @@
         const id = bot.hand[idx];
         const payload = {};
         if (id === 'bind') {
-          const foes = gameState.players.filter((p) => p.alive && p.actorNr !== bot.actorNr);
+          const foes = gameState.players.filter(
+            (p) => p.alive && Number(p.actorNr) !== Number(bot.actorNr)
+          );
           if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
         } else if (id === 'inspect' || id === 'peek_top') {
           payload.index = 0;
@@ -625,7 +613,9 @@
           payload.i = 0;
           payload.j = 1;
         } else if (id === 'double_arrow') {
-          const foes = gameState.players.filter((p) => p.alive && p.actorNr !== bot.actorNr);
+          const foes = gameState.players.filter(
+            (p) => p.alive && Number(p.actorNr) !== Number(bot.actorNr)
+          );
           payload.targets = foes.slice(0, 1).map((p) => p.actorNr);
         }
         // 跳过需要复杂选择且可能无效的牌，直接开枪更稳
@@ -636,7 +626,11 @@
         }
       }
 
-      const foes = gameState.players.filter((p) => p.alive && p.actorNr !== bot.actorNr);
+      const foes = gameState.players.filter((p) => {
+        if (!p.alive || Number(p.actorNr) === Number(bot.actorNr)) return false;
+        if (gameState.mode === 'team') return Number(p.team) !== Number(bot.team);
+        return true;
+      });
       const shootSelf = Math.random() < 0.45 || !foes.length;
       const target = shootSelf ? bot.actorNr : foes[Math.floor(Math.random() * foes.length)].actorNr;
       let nightOwlTargetNr;
@@ -853,7 +847,6 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
-      maybeShowSnakeCast();
       armAwaitingWatchdog();
       armInteractiveCountdown();
     }
@@ -1171,7 +1164,6 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
-      maybeShowSnakeCast();
       armAwaitingWatchdog();
       armInteractiveCountdown();
     };
@@ -2210,7 +2202,7 @@
       }
       document.getElementById('effectPills').innerHTML = pills.join('');
 
-      const me = view.players.find((p) => p.actorNr === myActorNr);
+      const me = view.players.find((p) => Number(p.actorNr) === Number(myActorNr));
       const myTurn = view.phase === 'playing' && !view.awaiting && curNr === Number(myActorNr);
       const fxActors = awaitingFxActors(view.awaiting);
 
@@ -2223,9 +2215,9 @@
           'hero-seat',
           isMe ? 'me' : '',
           ally ? 'ally' : '',
-          p.actorNr === curNr ? 'turn' : '',
+          Number(p.actorNr) === Number(curNr) ? 'turn' : '',
           !p.alive ? 'dead' : '',
-          !isMe && selectedTarget === p.actorNr ? 'selected' : '',
+          !isMe && Number(selectedTarget) === Number(p.actorNr) ? 'selected' : '',
           isCaster ? 'fx-caster' : '',
           isFxTarget ? 'fx-hit' : ''
         ].join(' ');
@@ -2432,13 +2424,15 @@
       document.getElementById('privateInfo').textContent = peeks.join(' ｜ ');
       renderGunpowderDock(view);
 
-      const othersAlive = view.players.filter((p) => p.alive && p.actorNr !== myActorNr);
-      if (selectedTarget && !othersAlive.some((p) => p.actorNr === selectedTarget)) {
+      const othersAlive = view.players.filter(
+        (p) => p.alive && Number(p.actorNr) !== Number(myActorNr)
+      );
+      if (selectedTarget && !othersAlive.some((p) => Number(p.actorNr) === Number(selectedTarget))) {
         selectedTarget = othersAlive[0] ? othersAlive[0].actorNr : null;
       }
       if (!selectedTarget && othersAlive[0]) selectedTarget = othersAlive[0].actorNr;
 
-      const myAwait = view.awaiting && view.awaiting.actorNr === myActorNr;
+      const myAwait = view.awaiting && Number(view.awaiting.actorNr) === Number(myActorNr);
       document.getElementById('useItemBtn').disabled = !myTurn || selectedHand.length !== 1;
 
       // 角色专属操作：仅对应角色可见
@@ -2451,7 +2445,7 @@
       const snakeAwait = view.awaiting && view.awaiting.type === 'rattlesnake';
       if (snakeAwait) {
         armRattlesnakeWindow(view.awaiting);
-        const mine = view.awaiting.actorNr === myActorNr;
+        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
         snakeBar.style.display = mine ? 'inline-flex' : 'none';
         document.getElementById('snakeBtn').disabled = !mine;
         document.getElementById('snakePassBtn').disabled = !mine;
@@ -2476,13 +2470,6 @@
         awaitBar.style.display = mine ? 'none' : 'inline-flex';
         document.getElementById('awaitHint').textContent =
           `${view.awaiting.name || '#' + view.awaiting.actorNr} 正在选择弃牌…${secText}`;
-      } else if (view.awaiting && view.awaiting.type === 'snake_cast') {
-        const mine = Number(view.awaiting.actorNr) === Number(myActorNr);
-        const sec = awaitingLeftSec(view.awaiting);
-        const secText = sec != null ? ` ${sec}s` : '';
-        awaitBar.style.display = mine ? 'none' : 'inline-flex';
-        document.getElementById('awaitHint').textContent =
-          `${view.awaiting.name || '#' + view.awaiting.actorNr} 正为复制的【${view.awaiting.itemName || '道具'}】选择目标…${secText}`;
       } else {
         awaitBar.style.display = 'none';
       }
@@ -2765,7 +2752,11 @@
       };
 
       if (toSelf && me && me.role === 'night_owl' && me.hp <= 4) {
-        const foes = view.players.filter((p) => p.alive && Number(p.actorNr) !== Number(myActorNr));
+        const foes = view.players.filter((p) => {
+          if (!p.alive || Number(p.actorNr) === Number(myActorNr)) return false;
+          if (view.mode === 'team') return Number(p.team) !== Number(me.team);
+          return true;
+        });
         if (!foes.length) {
           finishShoot(undefined);
           return;
@@ -2778,7 +2769,11 @@
           title: '夜枭 · 选择连带目标',
           sub: '对自己开枪若打出实弹，将与所选对手一起扣血',
           players: view.players,
-          selectable: (p) => p.alive && Number(p.actorNr) !== Number(myActorNr),
+          selectable: (p) => {
+            if (!p.alive || Number(p.actorNr) === Number(myActorNr)) return false;
+            if (view.mode === 'team') return Number(p.team) !== Number(me.team);
+            return true;
+          },
           min: 1,
           max: 1,
           confirmLabel: '确认目标',
@@ -3053,7 +3048,7 @@
       const row = document.getElementById('swapPickRow');
       const count = view.magazineCount;
       document.getElementById('ammoPickTitle').textContent = mode === 'inspect' ? '检视弹巢' : '换弹';
-      document.getElementById('swapPickConfirm').textContent = mode === 'inspect' ? '检视' : '交换';
+      document.getElementById('swapPickConfirm').textContent = mode === 'inspect' ? '确认' : '交换';
       row.innerHTML = Array.from({ length: count }, (_, i) => `
         <button type="button" class="ammo-pick-shell" data-index="${i}" aria-label="第 ${i + 1} 发">
           <span class="shell unknown"></span>
@@ -3082,36 +3077,27 @@
     }
 
     document.getElementById('swapPickCancel').onclick = () => {
-      const wasSnake = swapPickPending && swapPickPending.snakeCast;
       closeSwapPicker();
-      if (wasSnake) reopenSnakeCastPicker();
     };
 
     document.getElementById('swapPickConfirm').onclick = () => {
       if (!swapPickPending) return;
       const mode = swapPickPending.mode;
       const itemIndex = swapPickPending.itemIndex;
-      const snakeCast = !!swapPickPending.snakeCast;
       if (mode === 'inspect') {
         if (swapPickSelected.length !== 1) return;
         const index = swapPickSelected[0];
         closeSwapPicker();
-        if (snakeCast) castSnakeItem('inspect', { index });
-        else {
-          sendAction({ type: 'use_item', itemIndex, payload: { index } });
-          selectedHand = [];
-        }
+        sendAction({ type: 'use_item', itemIndex, payload: { index } });
+        selectedHand = [];
         return;
       }
       if (swapPickSelected.length !== 2) return;
       const [i, j] = swapPickSelected;
       if (i === j) return;
       closeSwapPicker();
-      if (snakeCast) castSnakeItem('swap', { i, j });
-      else {
-        sendAction({ type: 'use_item', itemIndex, payload: { i, j } });
-        selectedHand = [];
-      }
+      sendAction({ type: 'use_item', itemIndex, payload: { i, j } });
+      selectedHand = [];
     };
 
     function closeDiscardHand() {
@@ -3219,7 +3205,7 @@
       const interactiveTypes = {
         discard_hand: true,
         double_barrel: true,
-        snake_cast: true
+        rattlesnake: true
       };
       const isInteractive = !!interactiveTypes[a.type];
       const doneType = animDone[a.type] || (isInteractive ? 'awaiting_timeout' : null);
@@ -3275,9 +3261,6 @@
           awaitHint.textContent = `${a.name || '#' + a.actorNr}（双管）正在声明… ${sec}s`;
         } else if (a.type === 'discard_hand') {
           awaitHint.textContent = `${a.name || '#' + a.actorNr} 正在选择弃牌… ${sec}s`;
-        } else if (a.type === 'snake_cast') {
-          awaitHint.textContent =
-            `${a.name || '#' + a.actorNr} 正为复制的【${a.itemName || '道具'}】选择目标… ${sec}s`;
         }
       }
     }
@@ -3285,7 +3268,7 @@
     function armInteractiveCountdown() {
       clearInteractiveCountdown();
       const a = view && view.awaiting;
-      const types = { discard_hand: 1, double_barrel: 1, snake_cast: 1 };
+      const types = { discard_hand: 1, double_barrel: 1 };
       if (!a || !types[a.type] || !a.expiresAt) return;
       const token = a.token;
       refreshInteractiveCountdownUi();
@@ -3296,111 +3279,6 @@
         }
         refreshInteractiveCountdownUi();
       }, 250);
-    }
-
-    function reopenSnakeCastPicker() {
-      // 取消点选后清空 token，允许再次弹出施放 UI（已扣血，必须完成施放）
-      lastSnakeCastToken = '';
-      setTimeout(() => maybeShowSnakeCast(), 0);
-    }
-
-    function castSnakeItem(itemId, payload) {
-      sendAction({ type: 'rattlesnake_cast', payload: payload || {} });
-    }
-
-    function maybeShowSnakeCast() {
-      const awaiting = view && view.awaiting;
-      if (!awaiting || awaiting.type !== 'snake_cast') {
-        lastSnakeCastToken = '';
-        return;
-      }
-      if (Number(awaiting.actorNr) !== Number(myActorNr)) return;
-      // 若点选窗已开着，不必重复打开
-      if (document.getElementById('playerPickOverlay').classList.contains('show')) return;
-      if (document.getElementById('swapPickOverlay').classList.contains('show')) return;
-      const token = awaiting.token || `sc-${awaiting.itemId}-${awaiting.actorNr}`;
-      if (token === lastSnakeCastToken) return;
-      lastSnakeCastToken = token;
-      const itemId = awaiting.itemId;
-      const itemName = awaiting.itemName || itemId;
-
-      if (itemId === 'bind') {
-        openPlayerPicker({
-          title: `响尾蛇复制 · ${itemName}`,
-          sub: '请选择捆绑目标（取消将重新打开，必须完成施放）',
-          players: view.players,
-          selectable: (p) => p.alive && Number(p.actorNr) !== Number(myActorNr),
-          min: 1,
-          max: 1,
-          confirmLabel: '施放',
-          onConfirm: (nrs) => castSnakeItem(itemId, { targetActorNr: nrs[0] }),
-          onCancel: () => reopenSnakeCastPicker()
-        });
-        return;
-      }
-      if (itemId === 'double_arrow') {
-        openPlayerPicker({
-          title: `响尾蛇复制 · ${itemName}`,
-          sub: '自行选择 1～2 名连锁目标（每人同时仅可与一人连锁）；或解除全部连锁（取消将重新打开）',
-          players: view.players,
-          selectable: (p) => p.alive,
-          min: 1,
-          max: 2,
-          confirmLabel: '建立连锁',
-          extraLabel: '解除连锁',
-          onConfirm: (nrs) => castSnakeItem(itemId, { targets: nrs }),
-          onExtra: () => castSnakeItem(itemId, { unlock: true }),
-          onCancel: () => reopenSnakeCastPicker()
-        });
-        return;
-      }
-      if (itemId === 'swap' || itemId === 'inspect') {
-        openAmmoPickerForSnake(itemId);
-      }
-    }
-
-    function openAmmoPickerForSnake(mode) {
-      if (!view || !view.magazineCount) {
-        alert(mode === 'inspect' ? '弹药堆为空' : '弹药不足');
-        lastSnakeCastToken = '';
-        return;
-      }
-      if (mode === 'swap' && view.magazineCount < 2) {
-        alert('弹药不足两发');
-        lastSnakeCastToken = '';
-        return;
-      }
-      closePlayerPicker();
-      swapPickPending = { itemIndex: -1, mode, snakeCast: true };
-      swapPickSelected = [];
-      const row = document.getElementById('swapPickRow');
-      const count = view.magazineCount;
-      document.getElementById('ammoPickTitle').textContent =
-        mode === 'inspect' ? '响尾蛇复制 · 检视' : '响尾蛇复制 · 换弹';
-      document.getElementById('swapPickConfirm').textContent = mode === 'inspect' ? '检视' : '交换';
-      row.innerHTML = Array.from({ length: count }, (_, i) => `
-        <button type="button" class="ammo-pick-shell" data-index="${i}" aria-label="第 ${i + 1} 发">
-          <span class="shell unknown"></span>
-          <span class="ammo-pick-ord">第 ${i + 1} 发</span>
-        </button>
-      `).join('');
-      row.querySelectorAll('.ammo-pick-shell').forEach((btn) => {
-        btn.onclick = () => {
-          const idx = Number(btn.dataset.index);
-          if (mode === 'inspect') swapPickSelected = [idx];
-          else {
-            const pos = swapPickSelected.indexOf(idx);
-            if (pos >= 0) swapPickSelected.splice(pos, 1);
-            else if (swapPickSelected.length < 2) swapPickSelected.push(idx);
-            else swapPickSelected[1] = idx;
-          }
-          refreshSwapPickHint();
-        };
-      });
-      document.getElementById('swapPickSub').textContent =
-        '响尾蛇复制：请自行点选（取消将重新打开，必须完成施放）';
-      refreshSwapPickHint();
-      document.getElementById('swapPickOverlay').classList.add('show');
     }
 
     document.getElementById('ironRoseBtn').onclick = () => {

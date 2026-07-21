@@ -65,7 +65,7 @@ const ITEMS = {
     desc: '弃置子弹牌堆顶上一张子弹牌。'
   },
   inspect: {
-    id: 'inspect', name: '检视', glyph: '视', hue: 190,
+    id: 'inspect', name: '检视弹巢', glyph: '视', hue: 190,
     art: 'assets/tools/inspect.jpg',
     desc: '查看子弹牌堆中任意位置的子弹牌。'
   },
@@ -87,7 +87,7 @@ const ITEMS = {
   reverse: {
     id: 'reverse', name: '反转', glyph: '反', hue: 220,
     art: 'assets/tools/reverse.jpg',
-    desc: '将下一发实弹反转，实弹变为空弹，空弹变为实弹。'
+    desc: '将下一发子弹反转：实弹变为空弹，空弹变为实弹；特殊弹类型不变，但仍消耗本效果。'
   },
   bind: {
     id: 'bind', name: '捆绑', glyph: '捆', hue: 55,

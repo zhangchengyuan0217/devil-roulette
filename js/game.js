@@ -14,13 +14,12 @@ const AWAITING_ANIM_MS = {
   shot_reveal: 4200
 };
 
-/** 需玩家操作的窗口超时（弃牌 / 双管 / 响尾蛇施放） */
+/** 需玩家操作的窗口超时（弃牌 / 双管） */
 const INTERACTIVE_AWAITING_MS = 30000;
 
 const AWAITING_TIMEOUT_MS = Object.assign({}, AWAITING_ANIM_MS, {
   discard_hand: INTERACTIVE_AWAITING_MS,
-  double_barrel: INTERACTIVE_AWAITING_MS,
-  snake_cast: INTERACTIVE_AWAITING_MS
+  double_barrel: INTERACTIVE_AWAITING_MS
 });
 
 function stampAwaitingExpiry(awaiting, type) {
@@ -65,8 +64,8 @@ function resolveExpiredAwaiting(state) {
     case 'double_barrel':
       timeoutDoubleBarrel(state);
       return true;
-    case 'snake_cast':
-      timeoutSnakeCast(state);
+    case 'rattlesnake':
+      rattlesnakeTimeout(state, a.token);
       return true;
     default:
       return false;
@@ -111,7 +110,16 @@ function logState(state, msg) {
 }
 
 function getPlayer(state, actorNr) {
-  return state.players.find((p) => p.actorNr === actorNr);
+  const nr = Number(actorNr);
+  return state.players.find((p) => Number(p.actorNr) === nr);
+}
+
+/** 对手：混战=其他存活玩家；组队=其他队伍存活玩家 */
+function isOpponent(state, me, other) {
+  if (!me || !other || !other.alive) return false;
+  if (Number(me.actorNr) === Number(other.actorNr)) return false;
+  if (state.mode === 'team') return Number(me.team) !== Number(other.team);
+  return true;
 }
 
 function alivePlayers(state) {
@@ -176,6 +184,7 @@ function queueHandDiscardIfNeeded(state, player) {
 }
 
 function tryStartHandDiscard(state) {
+  if (state.phase === 'ended') return false;
   if (state.awaiting) return false;
   if (!state.handDiscardQueue) state.handDiscardQueue = [];
   while (state.handDiscardQueue.length) {
@@ -271,52 +280,6 @@ function timeoutDoubleBarrel(state) {
   logState(state, `${player ? player.name : '#' + actorNr}（双管）超时，本轮不声明。`);
   state.awaiting = null;
   beginTurns(state);
-}
-
-function defaultSnakeCastPayload(state, actorNr, itemId) {
-  if (itemId === 'bind') {
-    const foes = alivePlayers(state).filter((x) => x.actorNr !== actorNr);
-    if (!foes.length) return null;
-    return { targetActorNr: foes[0].actorNr };
-  }
-  if (itemId === 'double_arrow') {
-    const alive = alivePlayers(state);
-    if (!alive.length) return null;
-    return { targets: alive.slice(0, Math.min(2, alive.length)).map((x) => x.actorNr) };
-  }
-  if (itemId === 'inspect') {
-    if (!state.magazine.length) return null;
-    return { index: 0 };
-  }
-  if (itemId === 'swap') {
-    if (state.magazine.length < 2) return null;
-    return { i: 0, j: 1 };
-  }
-  return {};
-}
-
-function timeoutSnakeCast(state) {
-  if (!state.awaiting || state.awaiting.type !== 'snake_cast') return;
-  const actorNr = state.awaiting.actorNr;
-  const itemId = state.awaiting.itemId;
-  const itemName = state.awaiting.itemName || '道具';
-  const p = getPlayer(state, actorNr);
-  const payload = defaultSnakeCastPayload(state, actorNr, itemId);
-  if (!payload) {
-    logState(state, `${p ? p.name : '#' + actorNr} 复制【${itemName}】施放超时且无法自动选择，效果作废。`);
-    state.awaiting = null;
-    tryStartHandDiscard(state);
-    return;
-  }
-  logState(state, `${p ? p.name : '#' + actorNr} 复制【${itemName}】施放超时，系统代为选择。`);
-  const result = rattlesnakeCast(state, actorNr, payload);
-  if (!result.ok) {
-    logState(state, `自动施放失败：${result.reason || '未知'}，效果作废。`);
-    if (state.awaiting && state.awaiting.type === 'snake_cast') {
-      state.awaiting = null;
-      tryStartHandDiscard(state);
-    }
-  }
 }
 
 function hasRole(state, roleId) {
@@ -636,8 +599,11 @@ function resolveBulletType(state, shooter, raw) {
     if (t === BULLET.LIVE) t = BULLET.BLANK;
     else if (t === BULLET.BLANK) t = BULLET.LIVE;
   }
-  if (state.effects.reverseNext && (t === BULLET.LIVE || t === BULLET.BLANK)) {
-    t = t === BULLET.LIVE ? BULLET.BLANK : BULLET.LIVE;
+  // 反转挂在「下一发」上：打出即消耗；特殊弹类型不变但仍消耗反转
+  if (state.effects.reverseNext) {
+    if (t === BULLET.LIVE || t === BULLET.BLANK) {
+      t = t === BULLET.LIVE ? BULLET.BLANK : BULLET.LIVE;
+    }
     state.effects.reverseNext = false;
   }
   return t;
@@ -651,19 +617,22 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
   if (state.phase !== 'playing' || state.awaiting) return { ok: false, reason: '当前不能开枪' };
   const shooter = getPlayer(state, actorNr);
   const cur = currentPlayer(state);
-  if (!shooter || !cur || shooter.actorNr !== cur.actorNr) return { ok: false, reason: '不是你的回合' };
+  if (!shooter || !cur || Number(shooter.actorNr) !== Number(cur.actorNr)) {
+    return { ok: false, reason: '不是你的回合' };
+  }
   if (!shooter.alive) return { ok: false, reason: '你已出局' };
   if (state.magazine.length === 0) return { ok: false, reason: '弹药已空' };
 
   const target = getPlayer(state, targetActorNr);
   if (!target || !target.alive) return { ok: false, reason: '目标无效' };
-  const toSelf = target.actorNr === shooter.actorNr;
+  const toSelf = Number(target.actorNr) === Number(shooter.actorNr);
 
   const raw = state.magazine.pop();
   const resolved = resolveBulletType(state, shooter, raw);
-  if (raw === BULLET.LIVE) state.fired.live += 1;
-  else if (raw === BULLET.BLANK) state.fired.blank += 1;
-  else if (raw === BULLET.SPECIAL) state.fired.special += 1;
+  // 计数按结算结果，与玩家体感一致（快轮/反转后）
+  if (resolved === BULLET.LIVE) state.fired.live += 1;
+  else if (resolved === BULLET.BLANK) state.fired.blank += 1;
+  else if (resolved === BULLET.SPECIAL) state.fired.special += 1;
 
   let dmg = 1;
   let shotgunUsed = false;
@@ -675,16 +644,20 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
     state.effects.shotgunNext = false;
   }
 
-  let owlTarget = nightOwlTargetNr;
+  let owlTarget = nightOwlTargetNr != null ? Number(nightOwlTargetNr) : null;
   if (
     resolved === BULLET.LIVE &&
     toSelf &&
     shooter.role === 'night_owl' &&
-    shooter.hp <= 4 &&
-    !owlTarget
+    shooter.hp <= 4
   ) {
-    const foes = alivePlayers(state).filter((p) => p.actorNr !== shooter.actorNr);
-    owlTarget = foes[0] && foes[0].actorNr;
+    const picked = owlTarget != null ? getPlayer(state, owlTarget) : null;
+    if (!picked || !isOpponent(state, shooter, picked)) {
+      const foes = alivePlayers(state).filter((p) => isOpponent(state, shooter, p));
+      owlTarget = foes[0] ? Number(foes[0].actorNr) : null;
+    }
+  } else {
+    owlTarget = null;
   }
 
   state.awaiting = stampAwaitingExpiry(
@@ -749,14 +722,14 @@ function continueAfterShotReveal(state) {
     }
   } else if (resolved === BULLET.LIVE) {
     if (toSelf && shooter.role === 'night_owl' && shooter.hp <= 4) {
-      if (!nightOwlTargetNr) {
-        const foes = alivePlayers(state).filter((p) => p.actorNr !== shooter.actorNr);
-        nightOwlTargetNr = foes[0] && foes[0].actorNr;
+      let foe = nightOwlTargetNr != null ? getPlayer(state, nightOwlTargetNr) : null;
+      if (!foe || !isOpponent(state, shooter, foe)) {
+        const foes = alivePlayers(state).filter((p) => isOpponent(state, shooter, p));
+        foe = foes[0] || null;
       }
-      const foe = getPlayer(state, nightOwlTargetNr);
       const amount = dmg;
       const primary = [shooter];
-      if (foe && foe.alive) primary.push(foe);
+      if (foe) primary.push(foe);
       const pairIndexes = [];
       primary.forEach((p) => {
         const idx = findLinkPairIndex(state, p.actorNr);
@@ -839,7 +812,9 @@ function validateItemUse(state, player, itemId, payload) {
     }
     case 'bind': {
       const t = getPlayer(state, payload.targetActorNr);
-      if (!t || !t.alive || t.actorNr === player.actorNr) return '捆绑目标无效';
+      if (!t || !t.alive || Number(t.actorNr) === Number(player.actorNr)) {
+        return '捆绑目标无效';
+      }
       break;
     }
     case 'double_arrow': {
@@ -863,7 +838,9 @@ function useItem(state, actorNr, itemIndex, payload) {
   if (state.phase !== 'playing' || state.awaiting) return { ok: false, reason: '当前不能用道具' };
   const player = getPlayer(state, actorNr);
   const cur = currentPlayer(state);
-  if (!player || !cur || player.actorNr !== cur.actorNr) return { ok: false, reason: '不是你的回合' };
+  if (!player || !cur || Number(player.actorNr) !== Number(cur.actorNr)) {
+    return { ok: false, reason: '不是你的回合' };
+  }
   if (itemIndex < 0 || itemIndex >= player.hand.length) return { ok: false, reason: '无效道具' };
 
   const itemId = player.hand[itemIndex];
@@ -886,11 +863,12 @@ function useItem(state, actorNr, itemIndex, payload) {
 const RATTLESNAKE_WINDOW_MS = 5000;
 
 function offerRattlesnake(state, sourcePlayer, itemId, originalPayload) {
+  if (state.phase === 'ended') return;
   const snakes = alivePlayers(state).filter(
     (p) =>
       p.role === 'rattlesnake' &&
-      p.actorNr !== sourcePlayer.actorNr &&
-      !state.rattlesnakeUsedThisRound[p.actorNr] &&
+      Number(p.actorNr) !== Number(sourcePlayer.actorNr) &&
+      !state.rattlesnakeUsedThisRound[Number(p.actorNr)] &&
       p.hp >= 1
   );
   if (!snakes.length) {
@@ -904,11 +882,17 @@ function offerRattlesnake(state, sourcePlayer, itemId, originalPayload) {
 }
 
 function beginRattlesnakeWindow(state) {
+  if (state.phase === 'ended') {
+    state.awaiting = null;
+    state.lastItemForSnake = null;
+    state.rattlesnakeQueue = [];
+    return;
+  }
   while (state.rattlesnakeQueue && state.rattlesnakeQueue.length) {
     const nr = state.rattlesnakeQueue.shift();
     const p = getPlayer(state, nr);
     if (!p || !p.alive || p.role !== 'rattlesnake') continue;
-    if (state.rattlesnakeUsedThisRound[nr]) continue;
+    if (state.rattlesnakeUsedThisRound[Number(nr)]) continue;
     if (p.hp < 1 || !state.lastItemForSnake) continue;
     const itemId = state.lastItemForSnake.itemId;
     const itemName = ITEMS[itemId] ? ITEMS[itemId].name : itemId;
@@ -937,28 +921,29 @@ function clearRattlesnakeOpportunity(state) {
   state.rattlesnakeQueue = [];
 }
 
-function itemNeedsSnakeCast(itemId) {
-  return itemId === 'bind' || itemId === 'swap' || itemId === 'inspect' || itemId === 'double_arrow';
-}
-
 function rattlesnakeCopy(state, actorNr) {
   if (!state.awaiting || state.awaiting.type !== 'rattlesnake') {
     return { ok: false, reason: '当前不是响尾蛇窗口' };
   }
-  if (state.awaiting.actorNr !== actorNr) return { ok: false, reason: '不是你的复制窗口' };
+  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
+    return { ok: false, reason: '不是你的复制窗口' };
+  }
   const p = getPlayer(state, actorNr);
   if (!p || p.role !== 'rattlesnake' || !p.alive) return { ok: false, reason: '无法复制' };
-  if (state.rattlesnakeUsedThisRound[actorNr]) return { ok: false, reason: '本轮已复制过' };
+  if (state.rattlesnakeUsedThisRound[Number(actorNr)]) {
+    return { ok: false, reason: '本轮已复制过' };
+  }
   if (!state.lastItemForSnake) return { ok: false, reason: '没有可复制的道具' };
   if (p.hp < 1) return { ok: false, reason: '血量不足' };
 
   const itemId = state.lastItemForSnake.itemId;
   const itemName = ITEMS[itemId] ? ITEMS[itemId].name : itemId;
-  state.rattlesnakeUsedThisRound[actorNr] = true;
+  state.rattlesnakeUsedThisRound[Number(actorNr)] = true;
   state.awaiting = null;
 
   // 消耗血量视为受到伤害：连锁对象一同扣血，随后连锁解除
   applyDamage(state, p, 1, '响尾蛇复制：');
+  if (state.phase === 'ended') return { ok: true };
   if (!p.alive) {
     logState(state, `${p.name}（响尾蛇）复制【${itemName}】后出局。`);
     beginRattlesnakeWindow(state);
@@ -972,29 +957,13 @@ function rattlesnakeCopy(state, actorNr) {
   return { ok: true };
 }
 
-function rattlesnakeCast(state, actorNr, payload) {
-  if (!state.awaiting || state.awaiting.type !== 'snake_cast') {
-    return { ok: false, reason: '当前不是响尾蛇施放窗口' };
-  }
-  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
-    return { ok: false, reason: '不是你的施放窗口' };
-  }
-  const p = getPlayer(state, actorNr);
-  if (!p || !p.alive) return { ok: false, reason: '无法施放' };
-  const itemId = state.awaiting.itemId;
-  const bad = validateItemUse(state, p, itemId, payload || {});
-  if (bad) return { ok: false, reason: bad };
-  state.awaiting = null;
-  applyItemEffect(state, p, itemId, { ...(payload || {}), _noSnakeOffer: true });
-  if (!state.awaiting) tryStartHandDiscard(state);
-  return { ok: true };
-}
-
 function rattlesnakePass(state, actorNr) {
   if (!state.awaiting || state.awaiting.type !== 'rattlesnake') {
     return { ok: false, reason: '当前不是响尾蛇窗口' };
   }
-  if (state.awaiting.actorNr !== actorNr) return { ok: false, reason: '不是你的复制窗口' };
+  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
+    return { ok: false, reason: '不是你的复制窗口' };
+  }
   const p = getPlayer(state, actorNr);
   const itemName = state.awaiting.itemName || '道具';
   logState(state, `${p ? p.name : '#' + actorNr}（响尾蛇）放弃复制【${itemName}】。`);
@@ -1049,6 +1018,7 @@ function continueAfterPainkillerDice(state) {
   if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：');
   else heal(state, player, 2);
 
+  if (state.phase === 'ended') return { ok: true };
   if (offerSnake) offerRattlesnake(state, player, 'painkiller', {});
   if (!state.awaiting) tryStartHandDiscard(state);
   return { ok: true };
@@ -1206,7 +1176,7 @@ function applyItemEffect(state, player, itemId, payload) {
       break;
     case 'bind': {
       const t = getPlayer(state, payload.targetActorNr);
-      if (t && t.alive && t.actorNr !== player.actorNr) {
+      if (t && t.alive && Number(t.actorNr) !== Number(player.actorNr)) {
         t.skipNextTurn = true;
         logState(state, `${t.name} 被捆绑，下一回合无法行动。`);
         startItemFx(state, player, itemId, payload, {
@@ -1243,7 +1213,9 @@ function applyItemEffect(state, player, itemId, payload) {
 
 function declareDoubleBarrel(state, actorNr, index1Based, kind) {
   if (!state.awaiting || state.awaiting.type !== 'double_barrel') return { ok: false, reason: '无需声明' };
-  if (state.awaiting.actorNr !== actorNr) return { ok: false, reason: '不是双管玩家' };
+  if (Number(state.awaiting.actorNr) !== Number(actorNr)) {
+    return { ok: false, reason: '不是双管玩家' };
+  }
   const idx = index1Based - 1;
   if (idx < 0 || idx >= state.magazine.length) return { ok: false, reason: '发数无效' };
   if (kind !== BULLET.LIVE && kind !== BULLET.BLANK) return { ok: false, reason: '只能声明实/空' };
@@ -1257,8 +1229,8 @@ function declareDoubleBarrel(state, actorNr, index1Based, kind) {
     `${player.name} 声明第 ${index1Based} 发是【${bulletLabel(kind)}】→ 实际【${bulletLabel(actual)}】→ ${success ? '成功' : '失败'}。`
   );
 
-  const allies = alivePlayers(state).filter((p) => p.team === player.team);
-  const foes = alivePlayers(state).filter((p) => p.team !== player.team);
+  const allies = alivePlayers(state).filter((p) => Number(p.team) === Number(player.team));
+  const foes = alivePlayers(state).filter((p) => Number(p.team) !== Number(player.team));
   const gainers = success ? allies : foes;
   gainers.forEach((p) => {
     state.effects.doubleItemBonus[p.actorNr] = (state.effects.doubleItemBonus[p.actorNr] || 0) + 2;
@@ -1312,7 +1284,7 @@ function useIronRose(state, actorNr, handIndexes) {
   if (!p || p.role !== 'iron_rose') return { ok: false, reason: '不是铁玫瑰' };
   if (state.phase !== 'playing' || state.awaiting) return { ok: false, reason: '时机不对' };
   const cur = currentPlayer(state);
-  if (!cur || cur.actorNr !== actorNr) return { ok: false, reason: '不是你的回合' };
+  if (!cur || Number(cur.actorNr) !== Number(actorNr)) return { ok: false, reason: '不是你的回合' };
   if (!Array.isArray(handIndexes) || handIndexes.length !== 2) return { ok: false, reason: '需弃两张' };
   const idxs = handIndexes.slice().sort((a, b) => b - a);
   if (idxs[0] === idxs[1] || idxs.some((i) => i < 0 || i >= p.hand.length)) return { ok: false, reason: '手牌无效' };
@@ -1323,7 +1295,7 @@ function useIronRose(state, actorNr, handIndexes) {
   heal(state, p, 1);
   const healTargets = [p];
   alivePlayers(state)
-    .filter((x) => x.team === p.team && x.actorNr !== p.actorNr)
+    .filter((x) => Number(x.team) === Number(p.team) && Number(x.actorNr) !== Number(p.actorNr))
     .forEach((ally) => {
       heal(state, ally, 1);
       healTargets.push(ally);
@@ -1426,7 +1398,7 @@ function publicView(state, viewerActorNr) {
       team: p.team,
       skipNextTurn: p.skipNextTurn,
       handCount: p.hand.length,
-      hand: p.actorNr === viewerActorNr ? p.hand.slice() : null
+      hand: Number(p.actorNr) === Number(viewerActorNr) ? p.hand.slice() : null
     })),
     me: viewer
       ? {
@@ -1446,16 +1418,19 @@ function handleAction(state, actorNr, action) {
   if (resolveExpiredAwaiting(state)) {
     // 若本次就是对应的 done / 超时心跳，当作已处理成功
     const doneTypes = {
-      ammo_draw_done: 'ammo_draw',
-      first_player_done: 'first_player_spin',
-      painkiller_dice_done: 'painkiller_dice',
-      eject_done: 'eject_anim',
-      item_fx_done: 'item_fx',
-      double_barrel_done: 'double_barrel_reveal',
-      shot_reveal_done: 'shot_reveal',
+      ammo_draw_done: true,
+      first_player_done: true,
+      painkiller_dice_done: true,
+      eject_done: true,
+      item_fx_done: true,
+      double_barrel_done: true,
+      shot_reveal_done: true,
+      rattlesnake_timeout: true,
       awaiting_timeout: true
     };
     if (doneTypes[action.type]) return { ok: true };
+    // 超时推进后禁止同一次调用再执行开枪/用牌，避免双结算
+    return { ok: false, reason: '结算窗口已超时推进，请重试' };
   }
   switch (action.type) {
     case 'shoot':
@@ -1486,8 +1461,6 @@ function handleAction(state, actorNr, action) {
       return useIronRose(state, actorNr, action.handIndexes);
     case 'rattlesnake_copy':
       return rattlesnakeCopy(state, actorNr);
-    case 'rattlesnake_cast':
-      return rattlesnakeCast(state, actorNr, action.payload || {});
     case 'rattlesnake_pass':
       return rattlesnakePass(state, actorNr);
     case 'rattlesnake_timeout':
