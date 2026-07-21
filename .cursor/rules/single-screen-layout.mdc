@@ -24,6 +24,6 @@ alwaysApply: false
 ## 正确做法
 
 - ✅ 只让 `.board-arena` 吸收剩余高度
-- ✅ 手机适配仅用：`(orientation: landscape) and (max-height: 520px)`
-- ✅ 横屏压缩角色/手牌、关 hover 放大、预览 fixed、safe-area
-- ✅ 自测：桌面 + 手机横屏
+- ✅ 手机适配仅用：`(orientation: landscape) and (max-height: 560px) and (max-width: 960px)`
+- ✅ 横屏：底栏单行、迷你座位、预览 fixed、关 hover 放大
+- ✅ 自测：桌面 + 手机横屏（左右座位完整可见，底栏不竖堆）

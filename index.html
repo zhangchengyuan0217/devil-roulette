@@ -1953,7 +1953,7 @@
       nameEl.textContent = it.name || '';
       descEl.textContent = it.desc || '';
 
-      if (block && anchorEl && !window.matchMedia('(orientation: landscape) and (max-height: 520px)').matches) {
+      if (block && anchorEl && !window.matchMedia('(orientation: landscape) and (max-height: 560px) and (max-width: 960px)').matches) {
         const blockRect = block.getBoundingClientRect();
         const slotRect = anchorEl.getBoundingClientRect();
         const centerX = slotRect.left + slotRect.width / 2 - blockRect.left;

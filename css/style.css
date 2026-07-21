@@ -753,7 +753,7 @@ button.primary {
 }
 
 /* 仅手机横屏：点选预览提示（竖屏不改） */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 960px) {
   .hand-hint-desktop { display: none; }
   .hand-hint-touch { display: inline; }
 }
@@ -2885,38 +2885,43 @@ button.primary {
 
 /* =========================================================
    手机横屏对局适配（竖屏不做特殊布局）
-   典型：iPhone 横屏可视高度约 300–420px
+   策略：底栏改单行横排省高度；牌桌座位缩到迷你卡，左右不被裁切
    ========================================================= */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 960px) {
   :root {
-    --hand-preview-w: 100px;
-    --hand-preview-h: 140px;
+    --hand-preview-w: 96px;
+    --hand-preview-h: 134px;
   }
 
   .topbar {
-    padding: 2px 8px;
-    padding-left: max(8px, env(safe-area-inset-left, 0px));
-    padding-right: max(8px, env(safe-area-inset-right, 0px));
-    gap: 6px;
+    padding: 1px 6px;
+    padding-left: max(6px, env(safe-area-inset-left, 0px));
+    padding-right: max(6px, env(safe-area-inset-right, 0px));
+    gap: 4px;
+    min-height: 0;
   }
 
   .brand {
-    font-size: 0.75rem;
-    letter-spacing: 0.06em;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
   }
 
   .topbar .meta {
-    font-size: 0.58rem;
-    max-width: 36vw;
+    font-size: 0.52rem;
+    max-width: 28vw;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .topbar-controls {
+    gap: 3px;
+  }
+
   .topbar-controls button,
   .topbar-controls summary {
-    padding: 3px 7px;
-    font-size: 0.68rem;
+    padding: 2px 6px;
+    font-size: 0.62rem;
   }
 
   #roomInfo {
@@ -2924,74 +2929,124 @@ button.primary {
   }
 
   .table-wrap {
-    padding: 1px 4px 0;
+    padding: 0 4px;
     padding-left: max(4px, env(safe-area-inset-left, 0px));
     padding-right: max(4px, env(safe-area-inset-right, 0px));
   }
 
   .table-wrap.active,
   .table-wrap.layout-cross {
-    gap: 1px;
+    gap: 0;
     overflow: hidden;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .round-banner {
-    font-size: 0.62rem;
+    font-size: 0.55rem;
     padding: 0 2px;
-    line-height: 1.2;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* 保持十字座位：上 / 左毡右，全面压缩高度 */
+  /* 十字座位拉满宽度，左右列加宽以免裁切 */
   .board-arena {
-    grid-template-columns: minmax(72px, 100px) minmax(0, 1fr) minmax(72px, 100px);
+    grid-template-columns: minmax(88px, 120px) minmax(0, 1fr) minmax(88px, 120px);
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
       ". top ."
       "left felt right";
     max-width: 100%;
-    gap: 1px 4px;
-    padding: 0 2px 1px;
+    width: 100%;
+    gap: 0 6px;
+    padding: 0 2px;
     overflow: hidden;
     align-items: center;
+    justify-items: center;
   }
 
   .seat-top {
-    max-width: 100px;
+    max-width: 88px;
+    align-self: start;
+  }
+
+  .seat-left,
+  .seat-right {
+    align-self: center;
+    max-height: 100%;
+    overflow: hidden;
+    justify-content: center;
   }
 
   .seat-left,
   .seat-right,
   .seat-top {
-    padding: 1px;
+    padding: 0;
   }
 
-  .seat-left .seat-shot-wrap,
-  .seat-right .seat-shot-wrap {
-    gap: 3px;
-  }
-
-  .seat-left .seat-shoot-btn,
-  .seat-right .seat-shoot-btn {
-    writing-mode: horizontal-tb;
-    letter-spacing: 0.04em;
-    padding: 2px 6px;
-    min-height: 0;
-    min-width: 40px;
-    font-size: 0.62rem;
-  }
-
+  /* 名字/阵营不占高度，叠在卡上 */
   .board-arena .seat-slot::before {
-    font-size: 0.52rem;
-    margin-bottom: 0;
+    display: none;
+  }
+
+  .board-arena .seat-name {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+    z-index: 8;
+    max-width: 100%;
+    padding: 0 3px;
+    font-size: 0.5rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(8, 6, 4, 0.82);
+    border-radius: 0 0 4px 4px;
+    pointer-events: none;
+  }
+
+  .board-arena .hero-seat {
+    position: relative;
+    gap: 0;
+  }
+
+  .board-arena .seat-shot-wrap {
+    position: relative;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .board-arena .seat-shoot-btn {
+    position: absolute;
+    right: -2px;
+    bottom: 2px;
+    z-index: 9;
+    writing-mode: horizontal-tb;
+    letter-spacing: 0;
+    padding: 1px 5px;
+    min-width: 0;
+    min-height: 0;
+    font-size: 0.55rem;
+    border-radius: 4px;
+  }
+
+  .seat-top .seat-shoot-btn {
+    right: -2px;
+    bottom: 2px;
+    transform: none;
   }
 
   .board-arena .role-card {
-    width: 56px;
-    height: 82px;
+    width: 52px;
+    height: 74px;
   }
 
   .board-arena .role-card .art {
-    height: 36px;
+    height: 42px;
   }
 
   .board-arena .role-card .desc {
@@ -2999,12 +3054,20 @@ button.primary {
   }
 
   .board-arena .role-card .body {
-    padding: 2px 3px 8px;
-    gap: 1px;
+    padding: 2px 2px 8px;
+    gap: 0;
   }
 
-  .seat-name {
-    font-size: 0.58rem;
+  .board-arena .hp-drop {
+    width: 5px;
+    height: 5px;
+  }
+
+  .board-arena .hand-count {
+    font-size: 0.48rem;
+    padding: 1px 3px;
+    left: -2px;
+    bottom: -2px;
   }
 
   /* 触摸勿 sticky hover 放大 */
@@ -3023,56 +3086,103 @@ button.primary {
 
   .hero-seat.selected .role-card,
   .hero-seat.selected:hover .role-card {
-    box-shadow: 0 0 0 2px var(--gold), 0 6px 14px rgba(0,0,0,0.45);
+    box-shadow: 0 0 0 2px var(--gold), 0 4px 10px rgba(0,0,0,0.45);
   }
 
   .board-arena .felt {
-    padding: 4px 6px;
+    padding: 4px 8px;
     min-height: 0;
-    max-width: 100%;
+    max-width: min(420px, 100%);
+    align-self: center;
   }
 
   .loadout-row {
-    gap: 4px;
-    margin-bottom: 1px;
+    gap: 3px;
+    margin-bottom: 0;
   }
 
   .ammo-chip {
-    padding: 1px 5px;
-    font-size: 0.58rem;
+    padding: 0 4px;
+    font-size: 0.52rem;
+  }
+
+  .ammo-chip i {
+    width: 7px;
+    height: 7px;
   }
 
   .shell {
-    width: 12px;
-    height: 18px;
+    width: 10px;
+    height: 16px;
   }
 
   .felt-status {
-    font-size: 0.58rem;
+    font-size: 0.52rem;
+    margin: 0;
   }
 
   .pill {
-    font-size: 0.55rem;
-    padding: 1px 4px;
+    font-size: 0.5rem;
+    padding: 0 3px;
   }
 
+  .effect-pills {
+    gap: 2px;
+  }
+
+  /* —— 底栏：角色 | 手牌 | 按钮 同一行，不再竖堆吃高度 —— */
   .bottom-panel {
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 6px;
+    padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line);
+    overflow: visible;
+    min-height: 0;
   }
 
   .me-zone {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
     gap: 6px;
-    padding: 2px 6px 1px;
-    align-items: end;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  .me-seat-col {
+    flex: 0 0 auto;
+    align-items: center;
+  }
+
+  .me-zone .seat-shot-wrap {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .me-zone .hero-seat {
+    gap: 0;
+  }
+
+  .me-zone .seat-name {
+    font-size: 0.5rem;
+    max-width: 72px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .me-zone .role-card {
-    width: 48px;
-    height: 72px;
+    width: 44px;
+    height: 64px;
   }
 
   .me-zone .role-card .art {
-    height: 30px;
+    height: 34px;
   }
 
   .me-zone .role-card .desc {
@@ -3080,30 +3190,42 @@ button.primary {
   }
 
   .me-zone .role-card .body {
-    padding: 2px 3px 6px;
+    padding: 1px 2px 6px;
   }
 
   .me-zone .seat-shoot-btn {
-    padding: 3px 7px;
-    font-size: 0.62rem;
-    min-width: 40px;
+    padding: 3px 6px;
+    font-size: 0.58rem;
+    min-width: 0;
+  }
+
+  .hand-block {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: center;
   }
 
   .hand-label {
-    font-size: 0.58rem;
-    margin-bottom: 1px;
+    font-size: 0.5rem;
+    margin-bottom: 0;
+    max-width: 100%;
+  }
+
+  .hand-label .hand-hint {
+    display: none;
   }
 
   .item-card {
-    width: 44px;
-    height: 62px;
-    border-radius: 5px;
+    width: 40px;
+    height: 56px;
+    border-radius: 4px;
   }
 
   .hand-slot {
-    width: 40px;
-    height: 62px;
-    margin-left: -10px;
+    width: 36px;
+    height: 56px;
+    margin-left: -8px;
   }
 
   .hand-slot:first-child {
@@ -3111,23 +3233,62 @@ button.primary {
   }
 
   .hand-fan {
-    min-height: 66px;
-    height: 66px;
-    padding: 1px 6px 0 2px;
+    min-height: 58px;
+    height: 58px;
+    padding: 0 4px 0 0;
   }
 
   .hand-slot.is-selected .item-card,
   .item-card.selected {
-    transform: translateY(-10px) rotate(0deg);
+    transform: translateY(-8px) rotate(0deg);
   }
 
   .item-card .art-glyph {
-    font-size: 1.1rem;
+    font-size: 1rem;
   }
 
   .item-card .fallback-name {
+    font-size: 0.48rem;
+    margin-top: 1px;
+  }
+
+  .private-toast {
     font-size: 0.52rem;
-    margin-top: 2px;
+    min-height: 0;
+    margin: 0;
+  }
+
+  .gunpowder-dock {
+    display: none;
+  }
+
+  .actions-dock {
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 0 0 6px;
+    margin: 0;
+    border-top: none;
+    border-left: 1px solid var(--line);
+    background: transparent;
+    min-width: 72px;
+  }
+
+  .actions-dock button {
+    padding: 4px 8px;
+    font-size: 0.68rem;
+    white-space: nowrap;
+    width: 100%;
+    max-width: none;
+  }
+
+  #snakeBar,
+  #awaitBar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 2px !important;
   }
 
   .hand-preview {
@@ -3135,9 +3296,9 @@ button.primary {
     left: 50% !important;
     right: auto;
     bottom: auto;
-    top: 42%;
+    top: 46%;
     z-index: 220;
-    max-width: min(220px, 42vw);
+    max-width: min(200px, 36vw);
   }
 
   .hand-preview.is-visible {
@@ -3149,61 +3310,37 @@ button.primary {
   }
 
   .hand-preview-meta {
-    padding: 4px 8px;
-    max-width: 200px;
+    padding: 3px 6px;
+    max-width: 180px;
   }
 
   .hand-preview-name {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
   }
 
   .hand-preview-desc {
-    font-size: 0.58rem;
+    font-size: 0.52rem;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
 
-  .gunpowder-dock {
-    padding: 3px 6px;
-    gap: 4px;
-    margin-top: 1px;
-  }
-
-  .gunpowder-dock-label {
-    font-size: 0.52rem;
-  }
-
-  .actions-dock {
-    padding: 3px 8px max(4px, env(safe-area-inset-bottom, 0px));
-    gap: 6px;
-  }
-
-  .actions-dock button {
-    padding: 5px 10px;
-    font-size: 0.72rem;
-  }
-
-  .private-toast {
-    font-size: 0.6rem;
-  }
-
   .hp-drop {
-    width: 7px;
-    height: 7px;
+    width: 5px;
+    height: 5px;
   }
 
-  .hand-count {
-    font-size: 0.52rem;
-    padding: 1px 4px;
+  .me-zone .hand-count {
+    font-size: 0.48rem;
+    padding: 1px 3px;
   }
 
   .flip-scene,
   .flip-inner,
   .flip-face .role-card,
   .card-back {
-    width: min(120px, 28vw);
-    height: min(186px, 44vw);
+    width: min(100px, 22vw);
+    height: min(154px, 34vw);
   }
 }

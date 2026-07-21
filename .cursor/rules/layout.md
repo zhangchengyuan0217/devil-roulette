@@ -36,11 +36,12 @@ body (100dvh, flex column, overflow hidden)
 | `.actions-dock` | 始终 `flex: 0 0 auto`，完整可见。 |
 | 四座位「开枪」 | 十字布局：上 / 左毡右；左右开枪靠毡桌一侧。自己座位开枪在角色牌右侧。 |
 
-## 手机横屏（`orientation: landscape` + `max-height: 520px`）
+## 手机横屏（`orientation: landscape` + `max-height: 560px` + `max-width: 960px`）
 
-- 保持十字座位，全面压缩角色牌 / 手牌 / 顶栏 / 底栏。
-- 隐藏角色 `.desc`；关闭 hover 放大；预览 fixed 居中；`safe-area-inset`。
-- **竖屏不写特殊对局布局**（沿用桌面十字规则）。
+- 保持十字座位；角色牌缩为迷你卡，名字叠在卡上，开枪按钮叠在卡角。
+- **底栏单行横排**：自己角色 | 手牌 | 操作按钮，不再竖堆占高度。
+- 预览 fixed 居中；关闭 hover 放大；`safe-area-inset`。
+- **竖屏不写特殊对局布局**。
 
 ## 推荐尺寸参考（可调，但需自测不裁切）
 
