@@ -9,14 +9,24 @@
   --gold: #d4a857;
   --blood: #b83a32;
   --line: rgba(212, 168, 87, 0.35);
+  --bg-void: #080605;
   --font-ui: "Noto Serif SC", "Songti SC", serif;
   --font-display: "Cinzel", "Noto Serif SC", serif;
   /* 手牌预览：大图在独立层（炉石式），手牌本身只轻微抬起 */
   --hand-preview-w: 200px;
   --hand-preview-h: 280px;
+  --bg-image: url("../assets/background/background.jpg");
 }
 
 * { box-sizing: border-box; }
+
+html {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  background: var(--bg-void);
+}
 
 html, body {
   margin: 0;
@@ -26,14 +36,44 @@ html, body {
   overflow: hidden;
   font-family: var(--font-ui);
   color: var(--ink);
-  background:
-    radial-gradient(ellipse 80% 50% at 50% 0%, #4a3020 0%, transparent 55%),
-    linear-gradient(180deg, #1a120e, #0b0908);
 }
 
 body {
   display: flex;
   flex-direction: column;
+  position: relative;
+  isolation: isolate;
+  background-color: var(--bg-void);
+  background-image: var(--bg-image);
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+@media (max-width: 960px) {
+  body {
+    /* iOS/部分移动端 fixed 背景易抖动，改为随文档 */
+    background-attachment: scroll;
+  }
+}
+
+/* 压暗中心、加重四角，保证牌桌/手牌可读，不与背景台面抢戏 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(6, 4, 3, 0.55) 0%, transparent 70%),
+    radial-gradient(ellipse 120% 100% at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.72) 100%),
+    linear-gradient(180deg, rgba(8, 6, 4, 0.35) 0%, rgba(8, 6, 4, 0.15) 40%, rgba(4, 3, 2, 0.55) 100%);
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
 }
 
 body.phase-ended {
@@ -139,11 +179,12 @@ button.primary {
   margin: 24px auto;
   padding: 24px;
   text-align: center;
-  background: linear-gradient(180deg, #2a1f18, #1a140f);
+  background: linear-gradient(180deg, rgba(42, 31, 24, 0.92), rgba(26, 20, 15, 0.9));
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.45);
   overflow: auto;
+  backdrop-filter: blur(6px);
 }
 
 .lobby-actions {
