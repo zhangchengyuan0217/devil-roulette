@@ -11,8 +11,9 @@
   --line: rgba(212, 168, 87, 0.35);
   --font-ui: "Noto Serif SC", "Songti SC", serif;
   --font-display: "Cinzel", "Noto Serif SC", serif;
-  /* 手牌悬停倍率（见 layout.md）；选中为斗地主式上移，不用此倍率 */
-  --hand-hover-scale: 2.7;
+  /* 手牌预览：大图在独立层（炉石式），手牌本身只轻微抬起 */
+  --hand-preview-w: 200px;
+  --hand-preview-h: 280px;
 }
 
 * { box-sizing: border-box; }
@@ -777,10 +778,10 @@ button.primary {
   display: flex;
   justify-content: flex-start;
   align-items: flex-end;
-  /* 静止态必须能放下完整道具牌；悬停放大靠 transform 盖到牌桌上 */
+  /* 静止态必须能放下完整道具牌；大图预览在独立层，不放大手牌本身 */
   min-height: 128px;
   height: 128px;
-  padding: 4px 12px 2px 4px;
+  padding: 4px 16px 2px 8px;
   margin-top: 0;
   overflow: visible;
   width: 100%;
@@ -794,15 +795,19 @@ button.primary {
   pointer-events: auto;
 }
 
-/* 稳定命中区：外层不变形，避免悬停放大时指针脱出导致闪烁 */
+/* 稳定命中区：外层不变形；牌面轻微抬起，大图走 .hand-preview */
 .hand-slot {
   position: relative;
   flex: 0 0 auto;
   width: 74px;
   height: 120px;
-  margin: 0;
+  margin: 0 0 0 -22px;
   z-index: 1;
   cursor: pointer;
+}
+
+.hand-slot:first-child {
+  margin-left: 0;
 }
 
 .hand-slot:hover,
@@ -812,6 +817,127 @@ button.primary {
 
 .hand-slot.is-selected {
   z-index: 70;
+}
+
+/* 炉石式独立大图预览（盖在牌桌上方，不挤布局） */
+.hand-preview {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(12px) scale(0.94);
+  transition: opacity 0.16s ease, transform 0.18s ease, visibility 0.16s ease;
+}
+
+.hand-preview.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* display:flex 会盖过 UA 的 [hidden]，取消时必须立刻消失，否则会淡出闪一下 */
+.hand-preview[hidden] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transition: none !important;
+}
+
+.hand-preview-face {
+  width: var(--hand-preview-w);
+  height: var(--hand-preview-h);
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  background: #0d0a08;
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(212, 168, 87, 0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.hand-preview-face.has-art {
+  padding: 0;
+}
+
+.hand-preview-face .art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.hand-preview-face:not(.has-art) {
+  background: linear-gradient(160deg, hsl(var(--hue, 40), 50%, 40%), hsl(var(--hue, 40), 40%, 16%));
+}
+
+.hand-preview-face .art-glyph {
+  font-size: 3.2rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+.hand-preview-face .fallback-name {
+  margin-top: 12px;
+  font-size: 1.05rem;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.hand-preview-meta {
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(12, 8, 6, 0.92);
+  border: 1px solid rgba(212, 168, 87, 0.35);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  max-width: 260px;
+}
+
+.hand-preview-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.hand-preview-desc {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: rgba(244, 235, 225, 0.88);
+}
+
+@media (max-height: 820px) {
+  :root {
+    --hand-preview-w: 150px;
+    --hand-preview-h: 210px;
+  }
+  .hand-preview-meta {
+    padding: 6px 10px;
+    max-width: 220px;
+  }
+  .hand-preview-desc {
+    font-size: 0.66rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 }
 
 .private-toast {
@@ -1304,7 +1430,7 @@ button.primary {
   z-index: 5;
 }
 
-/* —— 道具牌：悬停预览放大；点选上移固定（斗地主式） —— */
+/* —— 道具牌：手牌轻抬 + 独立大图预览（炉石式）；点选上移固定 —— */
 .item-card {
   width: 86px;
   height: 120px;
@@ -1314,7 +1440,7 @@ button.primary {
   background: #1c1510;
   box-shadow: 0 6px 12px rgba(0,0,0,0.4);
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
   position: absolute;
   left: 50%;
   bottom: 0;
@@ -1327,8 +1453,9 @@ button.primary {
   transform-origin: center bottom;
   user-select: none;
   -webkit-user-select: none;
-  /* 命中交给固定尺寸的 .hand-slot，避免放大后指针脱出闪烁 */
+  /* 命中交给固定尺寸的 .hand-slot */
   pointer-events: none;
+  transform: rotate(calc(var(--fan, 0) * 2.4deg));
 }
 
 .item-card.has-art {
@@ -1345,19 +1472,19 @@ button.primary {
   pointer-events: none;
 }
 
-/* 未选中：槽位悬停时向上放大（槽位本身不变形） */
+/* 未选中：槽位悬停时轻微抬起（大图看 .hand-preview） */
 .hand-slot:not(.is-selected):hover .item-card,
 .hand-slot:not(.is-selected):focus-within .item-card {
-  transform: translateY(-72px) scale(var(--hand-hover-scale, 2.7));
-  box-shadow: 0 32px 60px rgba(0,0,0,0.75);
-  border-color: rgba(255,255,255,0.6);
+  transform: translateY(-22px) scale(1.08) rotate(0deg);
+  box-shadow: 0 18px 28px rgba(0,0,0,0.55);
+  border-color: rgba(255,255,255,0.55);
 }
 
-/* 选中：上移固定，悬停不再放大 */
+/* 选中：上移固定，金边高亮 */
 .hand-slot.is-selected .item-card,
 .item-card.selected {
-  transform: translateY(-36px);
-  box-shadow: 0 0 0 2px var(--gold), 0 12px 22px rgba(0,0,0,0.5);
+  transform: translateY(-28px) rotate(0deg);
+  box-shadow: 0 0 0 2px var(--gold), 0 14px 24px rgba(0,0,0,0.5);
   border-color: var(--gold);
 }
 

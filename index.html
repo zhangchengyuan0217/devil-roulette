@@ -87,7 +87,14 @@
       <div class="me-zone">
         <div class="me-seat-col" id="mySeat"></div>
         <div class="hand-block">
-          <div class="hand-label">我的道具手牌 <span class="hand-hint">点选上移 · 每次用 1 张 · 本回合可连用</span></div>
+          <div class="hand-preview" id="handPreview" hidden aria-hidden="true">
+            <div class="hand-preview-face" id="handPreviewFace"></div>
+            <div class="hand-preview-meta">
+              <div class="hand-preview-name" id="handPreviewName"></div>
+              <div class="hand-preview-desc" id="handPreviewDesc"></div>
+            </div>
+          </div>
+          <div class="hand-label">我的道具手牌 <span class="hand-hint">悬停预览 · 点选上移 · 每次用 1 张</span></div>
           <div class="hand-fan" id="hand"></div>
           <div class="private-toast" id="privateInfo"></div>
           <div class="gunpowder-dock" id="gunpowderDock" hidden>
@@ -287,6 +294,9 @@
     let fullStateBackup = null;
     let view = null;
     let selectedHand = [];
+    let handPreviewHoverIdx = null;
+    /** 二次点击取消选中后，抑制预览直到鼠标离开该牌（避免 render 重建触发 mouseenter） */
+    let handPreviewSuppressUntilLeave = false;
     let selectedTarget = null;
     let myActorNr = 0;
     let lastRevealKey = '';
@@ -1906,6 +1916,59 @@
       }).join('');
     }
 
+    /** 炉石式独立大图预览：悬停优先，否则显示已选中牌 */
+    function syncHandPreview(myHand, anchorEl) {
+      const preview = document.getElementById('handPreview');
+      const face = document.getElementById('handPreviewFace');
+      const nameEl = document.getElementById('handPreviewName');
+      const descEl = document.getElementById('handPreviewDesc');
+      const block = document.querySelector('.hand-block');
+      if (!preview || !face || !nameEl || !descEl) return;
+
+      let idx = handPreviewSuppressUntilLeave ? -1 : handPreviewHoverIdx;
+      if (idx == null || idx < 0 || !myHand || !myHand[idx]) {
+        idx = (!handPreviewSuppressUntilLeave && selectedHand.length)
+          ? selectedHand[selectedHand.length - 1]
+          : -1;
+      }
+      if (idx < 0 || !myHand || !myHand[idx]) {
+        // 先 hidden 立刻卸掉，避免 opacity 淡出造成半透明残影
+        preview.hidden = true;
+        preview.classList.remove('is-visible');
+        preview.setAttribute('aria-hidden', 'true');
+        preview.style.left = '50%';
+        return;
+      }
+
+      const it = itemMeta(myHand[idx]);
+      if (it.art) {
+        face.className = 'hand-preview-face has-art';
+        face.style.removeProperty('--hue');
+        face.innerHTML = `<img class="art-img" src="${it.art}" alt="${it.name}" draggable="false">`;
+      } else {
+        face.className = 'hand-preview-face';
+        face.style.setProperty('--hue', String(it.hue || 40));
+        face.innerHTML = `<span class="art-glyph">${it.glyph || '?'}</span><span class="fallback-name">${it.name}</span>`;
+      }
+      nameEl.textContent = it.name || '';
+      descEl.textContent = it.desc || '';
+
+      if (block && anchorEl) {
+        const blockRect = block.getBoundingClientRect();
+        const slotRect = anchorEl.getBoundingClientRect();
+        const centerX = slotRect.left + slotRect.width / 2 - blockRect.left;
+        const half = 110;
+        const left = Math.max(half + 8, Math.min(blockRect.width - half - 8, centerX));
+        preview.style.left = `${left}px`;
+      } else {
+        preview.style.left = '50%';
+      }
+
+      preview.hidden = false;
+      preview.setAttribute('aria-hidden', 'false');
+      preview.classList.add('is-visible');
+    }
+
     function render() {
       const inRoom = !offlineSim && client && client.isJoinedToRoom();
       document.getElementById('roomInfo').textContent = offlineSim
@@ -2120,7 +2183,7 @@
         bindSeats(document.getElementById('mySeat'));
       }
 
-      // 手牌扇形（斗地主式：点选上移固定；普通道具单选，铁玫瑰最多 2 张）
+      // 手牌扇形（炉石式：轻抬 + 独立大图预览；点选上移；普通道具单选，铁玫瑰最多 2 张）
       const myHand = (view.me && view.me.hand) || [];
       const handEl = document.getElementById('hand');
       const maxHandSelect = me && me.role === 'iron_rose' ? 2 : 1;
@@ -2128,14 +2191,19 @@
       if (selectedHand.length > maxHandSelect) {
         selectedHand = selectedHand.slice(-maxHandSelect);
       }
+      if (handPreviewHoverIdx != null && (handPreviewHoverIdx < 0 || handPreviewHoverIdx >= myHand.length)) {
+        handPreviewHoverIdx = null;
+      }
+      const fanMid = (myHand.length - 1) / 2;
       handEl.innerHTML = myHand.map((id, i) => {
         const it = itemMeta(id);
         const selected = selectedHand.includes(i);
+        const fan = myHand.length > 1 ? (i - fanMid).toFixed(2) : '0';
         const cardInner = it.art
-          ? `<div class="item-card has-art ${selected ? 'selected' : ''}" title="${it.name}">
+          ? `<div class="item-card has-art ${selected ? 'selected' : ''}" style="--fan:${fan}" title="${it.name}">
             <img class="art-img" src="${it.art}" alt="${it.name}" draggable="false">
           </div>`
-          : `<div class="item-card ${selected ? 'selected' : ''}" style="--hue:${it.hue}" title="${it.name}">
+          : `<div class="item-card ${selected ? 'selected' : ''}" style="--hue:${it.hue};--fan:${fan}" title="${it.name}">
             <span class="art-glyph">${it.glyph}</span>
             <span class="fallback-name">${it.name}</span>
           </div>`;
@@ -2143,21 +2211,47 @@
       }).join('') || '<span class="meta">手牌为空</span>';
 
       handEl.querySelectorAll('.hand-slot').forEach((el) => {
+        el.onmouseenter = () => {
+          if (handPreviewSuppressUntilLeave) return;
+          handPreviewHoverIdx = Number(el.dataset.i);
+          syncHandPreview(myHand, el);
+        };
+        el.onmouseleave = () => {
+          handPreviewHoverIdx = null;
+          handPreviewSuppressUntilLeave = false;
+          const sel = selectedHand.length ? handEl.querySelector(`.hand-slot[data-i="${selectedHand[selectedHand.length - 1]}"]`) : null;
+          syncHandPreview(myHand, sel);
+        };
         el.onclick = () => {
           const i = Number(el.dataset.i);
           const pos = selectedHand.indexOf(i);
           if (pos >= 0) {
             selectedHand = selectedHand.filter((x) => x !== i);
+            // 取消选中：立刻收起大图（即使鼠标还在牌上）
+            handPreviewSuppressUntilLeave = true;
+            handPreviewHoverIdx = null;
           } else if (maxHandSelect === 1) {
             selectedHand = [i];
+            handPreviewSuppressUntilLeave = false;
           } else if (selectedHand.length < maxHandSelect) {
             selectedHand = selectedHand.concat(i);
+            handPreviewSuppressUntilLeave = false;
           } else {
             selectedHand = selectedHand.slice(1).concat(i);
+            handPreviewSuppressUntilLeave = false;
           }
           render();
         };
       });
+      {
+        const hoverEl = (!handPreviewSuppressUntilLeave && handPreviewHoverIdx != null)
+          ? handEl.querySelector(`.hand-slot[data-i="${handPreviewHoverIdx}"]`)
+          : null;
+        const selEl = (!handPreviewSuppressUntilLeave && selectedHand.length)
+          ? handEl.querySelector(`.hand-slot[data-i="${selectedHand[selectedHand.length - 1]}"]`)
+          : null;
+        syncHandPreview(myHand, hoverEl || selEl);
+      }
 
       const peeks = [];
       if (view.me && view.me.lastPeek) {
