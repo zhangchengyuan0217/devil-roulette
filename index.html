@@ -2208,9 +2208,12 @@
 
       function seatHtml(p) {
         const isMe = Number(p.actorNr) === Number(myActorNr);
-        const ally = me && !isMe && view.mode === 'team' && p.team === me.team;
+        const ally = me && !isMe && view.mode === 'team' && Number(p.team) === Number(me.team);
         const isCaster = fxActors.caster != null && Number(p.actorNr) === fxActors.caster;
         const isFxTarget = fxActors.targets.some((nr) => Number(nr) === Number(p.actorNr));
+        const teamChip = (view.mode === 'team' && p.team != null)
+          ? `<span class="team-chip ${Number(p.team) === 0 ? 'is-red' : 'is-blue'}" title="${Number(p.team) === 0 ? '红队' : '蓝队'}">${Number(p.team) === 0 ? '红' : '蓝'}</span>`
+          : '';
         const cls = [
           'hero-seat',
           isMe ? 'me' : '',
@@ -2222,8 +2225,8 @@
           isFxTarget ? 'fx-hit' : ''
         ].join(' ');
         const name = isMe
-          ? `你 · ${p.name} <span class="seat-nr">#${p.actorNr}</span>`
-          : `${p.name} <span class="seat-nr">#${p.actorNr}</span>`;
+          ? `${teamChip}你 · ${p.name} <span class="seat-nr">#${p.actorNr}</span>`
+          : `${teamChip}${p.name} <span class="seat-nr">#${p.actorNr}</span>`;
         const canShoot = myTurn && p.alive;
         const shootBtn = `<button type="button" class="seat-shoot-btn" data-shoot="${p.actorNr}" ${canShoot ? '' : 'disabled'}>开枪</button>`;
         const card = `<div class="${cls}" data-actor="${p.actorNr}" data-role="${p.role}" data-name="${p.name}">
@@ -2279,36 +2282,31 @@
         let topP;
         let leftP;
         let rightP;
-        let myTeamClass = 'team-red';
-        let foeTeamClass = 'team-blue';
 
         if (view.mode === 'team') {
-          myTeamClass = me.team === 0 ? 'team-red' : 'team-blue';
-          foeTeamClass = me.team === 0 ? 'team-blue' : 'team-red';
-          const ally = view.players.find((p) => p.team === me.team && p.actorNr !== me.actorNr);
-          const foes = view.players.filter((p) => p.team !== me.team).sort((a, b) => a.actorNr - b.actorNr);
+          const ally = view.players.find((p) => Number(p.team) === Number(me.team) && Number(p.actorNr) !== Number(me.actorNr));
+          const foes = view.players.filter((p) => Number(p.team) !== Number(me.team)).sort((a, b) => a.actorNr - b.actorNr);
           topP = ally;
           leftP = foes[0];
           rightP = foes[1];
         } else {
           // 混战：仍十字落座，对面仅视觉相对
-          const others = sorted.filter((p) => p.actorNr !== me.actorNr);
+          const others = sorted.filter((p) => Number(p.actorNr) !== Number(me.actorNr));
           topP = others[0];
           leftP = others[1];
           rightP = others[2];
-          myTeamClass = '';
-          foeTeamClass = '';
         }
 
-        const allyTag = view.mode === 'team' ? (me.team === 0 ? '红队 · 队友' : '蓝队 · 队友') : '对面';
-        const foeTagL = view.mode === 'team' ? (me.team === 0 ? '蓝队' : '红队') : '左侧';
-        const foeTagR = view.mode === 'team' ? (me.team === 0 ? '蓝队' : '红队') : '右侧';
+        const allyTag = view.mode === 'team' ? '' : '对面';
+        const foeTagL = view.mode === 'team' ? '' : '左侧';
+        const foeTagR = view.mode === 'team' ? '' : '右侧';
 
-        paintSlot(document.getElementById('seatTop'), topP, view.mode === 'team' ? myTeamClass : '', allyTag);
+        // 组队身份用名字旁「红/蓝」小标 +「队友」徽记，不再给座位套色块
+        paintSlot(document.getElementById('seatTop'), topP, '', allyTag);
         // 自己已在道具左侧完整展示，桌面底位不再重复
         paintSlot(document.getElementById('seatBottom'), null, '', '');
-        paintSlot(document.getElementById('seatLeft'), leftP, view.mode === 'team' ? foeTeamClass : '', foeTagL);
-        paintSlot(document.getElementById('seatRight'), rightP, view.mode === 'team' ? foeTeamClass : '', foeTagR);
+        paintSlot(document.getElementById('seatLeft'), leftP, '', foeTagL);
+        paintSlot(document.getElementById('seatRight'), rightP, '', foeTagR);
 
         document.getElementById('opponents').innerHTML = '';
         document.getElementById('mySeat').innerHTML = seatHtml(me);

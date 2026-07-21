@@ -469,30 +469,89 @@ button.primary {
   min-height: 0;
 }
 
-.seat-slot.team-red {
-  background: linear-gradient(180deg, rgba(180, 40, 40, 0.2), rgba(80, 16, 16, 0.1));
-  border: 1px solid rgba(220, 80, 80, 0.45);
-}
-
+/* 组队标识：小色标，不要整块红蓝底框 */
+.seat-slot.team-red,
 .seat-slot.team-blue {
-  background: linear-gradient(180deg, rgba(40, 90, 180, 0.2), rgba(16, 36, 80, 0.1));
-  border: 1px solid rgba(90, 140, 220, 0.45);
+  background: none;
+  border: none;
+  box-shadow: none;
 }
 
 .seat-slot::before {
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  margin-bottom: 4px;
-  opacity: 0.85;
+  display: none;
+  content: none;
 }
 
-.seat-slot.team-red::before { content: attr(data-tag); color: #ffb4b0; }
-.seat-slot.team-blue::before { content: attr(data-tag); color: #b4d0ff; }
+.seat-slot.team-red::before,
+.seat-slot.team-blue::before {
+  content: attr(data-tag);
+  display: inline-block;
+  margin: 0 0 6px;
+  padding: 2px 8px 2px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  background: rgba(8, 6, 4, 0.7);
+  border: 1px solid rgba(212, 168, 87, 0.2);
+}
+
+.seat-slot.team-red::before {
+  color: #f0c8c2;
+  box-shadow: inset 3px 0 0 #c45c52;
+  border-color: rgba(196, 92, 82, 0.4);
+}
+
+.seat-slot.team-blue::before {
+  color: #c8d6f2;
+  box-shadow: inset 3px 0 0 #6b8fd4;
+  border-color: rgba(107, 143, 212, 0.4);
+}
+
+.seat-slot[data-tag=""]::before {
+  display: none;
+  content: none;
+}
+
+.team-chip {
+  display: inline-block;
+  min-width: 1.05em;
+  padding: 0 5px;
+  margin-right: 5px;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.4;
+  vertical-align: 1px;
+  letter-spacing: 0;
+}
+
+.team-chip.is-red {
+  color: #ffe0dc;
+  background: rgba(120, 36, 32, 0.9);
+  border: 1px solid rgba(210, 100, 90, 0.55);
+}
+
+.team-chip.is-blue {
+  color: #dde8ff;
+  background: rgba(32, 52, 110, 0.9);
+  border: 1px solid rgba(110, 150, 220, 0.55);
+}
 
 .hero-seat.ally .seat-name::after {
-  content: ' · 队友';
+  content: '队友';
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   color: var(--gold);
-  font-size: 0.72rem;
+  background: rgba(212, 168, 87, 0.12);
+  border: 1px solid rgba(212, 168, 87, 0.35);
+  vertical-align: 1px;
 }
 
 /* 对手区（2~3人经典布局） */
