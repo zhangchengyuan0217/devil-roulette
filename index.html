@@ -1053,11 +1053,14 @@
     function roleCardHtml(p, opts) {
       const role = roleMeta(p.role);
       const big = opts && opts.big;
+      const lowHp = p.alive !== false && Number(p.hp) <= 3 && Number(p.hp) > 0;
+      const lowCrit = lowHp && Number(p.hp) <= 1;
       const art = role.art
         ? `<img class="art-img" src="${role.art}" alt="${role.name}" draggable="false">`
         : `<span class="art-glyph">${role.glyph}</span>`;
+      const lowCls = lowHp ? ` low-hp${lowCrit ? ' low-hp-crit' : ''}` : '';
       return `
-        <div class="role-card${role.art ? ' has-art' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${role.name}">
+        <div class="role-card${role.art ? ' has-art' : ''}${lowCls}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${role.name}">
           <div class="art">${art}</div>
           <div class="body">
             ${hpPipsHtml(p.hp)}
@@ -2214,12 +2217,16 @@
         const teamChip = (view.mode === 'team' && p.team != null)
           ? `<span class="team-chip ${Number(p.team) === 0 ? 'is-red' : 'is-blue'}" title="${Number(p.team) === 0 ? '红队' : '蓝队'}">${Number(p.team) === 0 ? '红' : '蓝'}</span>`
           : '';
+        const lowHp = p.alive && Number(p.hp) <= 3 && Number(p.hp) > 0;
+        const lowCrit = lowHp && Number(p.hp) <= 1;
         const cls = [
           'hero-seat',
           isMe ? 'me' : '',
           ally ? 'ally' : '',
           Number(p.actorNr) === Number(curNr) ? 'turn' : '',
           !p.alive ? 'dead' : '',
+          lowHp ? 'low-hp' : '',
+          lowCrit ? 'low-hp-crit' : '',
           !isMe && Number(selectedTarget) === Number(p.actorNr) ? 'selected' : '',
           isCaster ? 'fx-caster' : '',
           isFxTarget ? 'fx-hit' : ''

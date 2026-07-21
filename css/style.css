@@ -1364,6 +1364,76 @@ button.primary {
     inset 0 0 0 2px rgba(58, 40, 16, 0.55);
 }
 
+/* 低血量警告：卡外血红光晕脉动（≤3），危急（≤1）更快更亮；不盖立绘 */
+.role-card.low-hp::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 0;
+  box-shadow:
+    0 0 0 1px rgba(184, 58, 50, 0.55),
+    0 0 14px 2px rgba(184, 58, 50, 0.35),
+    0 0 28px rgba(120, 24, 20, 0.28);
+  animation: lowHpAura 1.85s ease-in-out infinite;
+}
+
+.role-card.low-hp-crit::before {
+  inset: -6px;
+  box-shadow:
+    0 0 0 1px rgba(220, 70, 60, 0.7),
+    0 0 18px 3px rgba(200, 48, 40, 0.5),
+    0 0 36px rgba(140, 20, 16, 0.4);
+  animation-duration: 1.15s;
+}
+
+.role-card.low-hp .art {
+  filter: saturate(0.92) brightness(0.96);
+}
+
+.role-card.low-hp-crit .art {
+  filter: saturate(0.85) brightness(0.93) contrast(1.05);
+}
+
+.role-card.low-hp .hp-pips {
+  border-color: rgba(212, 84, 74, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(184, 58, 50, 0.25),
+    0 0 10px rgba(184, 58, 50, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.45);
+  animation: lowHpPips 1.85s ease-in-out infinite;
+}
+
+.role-card.low-hp-crit .hp-pips {
+  border-color: rgba(255, 120, 110, 0.7);
+  animation-duration: 1.15s;
+}
+
+@keyframes lowHpAura {
+  0%, 100% {
+    opacity: 0.42;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.015);
+  }
+}
+
+@keyframes lowHpPips {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.18); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role-card.low-hp::before,
+  .role-card.low-hp .hp-pips {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
 /* 自己座位 */
 .me-zone .role-card {
   width: 96px;
