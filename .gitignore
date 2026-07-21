@@ -5,6 +5,7 @@ node_modules/
 assets/rule/roles
 assets/rule/tools
 assets/rule/bullets
+assets/rule/background
 
 # Environment / secrets
 .env
