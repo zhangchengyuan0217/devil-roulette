@@ -153,6 +153,51 @@ button.primary {
   flex-wrap: wrap;
 }
 
+.lobby-join-row {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.lobby-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.lobby-field input {
+  min-width: 150px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #120e0b;
+  color: #f2e6d4;
+}
+
+.lobby-field input:focus {
+  outline: 1px solid var(--gold);
+  border-color: var(--gold);
+}
+
+#roomNameDisplay {
+  min-width: 160px;
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.85;
+}
+
+#playerName {
+  min-width: 160px;
+}
+
 .lobby-shell h2 {
   font-family: var(--font-display);
   color: var(--gold);

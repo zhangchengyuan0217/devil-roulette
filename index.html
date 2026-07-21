@@ -32,7 +32,18 @@
 
   <section class="lobby-shell" id="lobbyPanel">
     <h2>等待开局</h2>
-    <p class="meta">四人组队：上下为队友、左右为对手（红蓝分队）。也可先点「模拟对局」单人预览。</p>
+    <p class="meta">先填写用户名，再手动加入默认房间。四人组队：上下队友、左右对手（红蓝分队）。也可先点「模拟对局」单人预览。</p>
+    <div class="lobby-join-row">
+      <label class="lobby-field">
+        <span>用户名</span>
+        <input id="playerName" type="text" maxlength="16" placeholder="输入你的昵称" autocomplete="nickname">
+      </label>
+      <label class="lobby-field">
+        <span>房间号</span>
+        <input id="roomNameDisplay" type="text" value="DevilRoom_101" readonly tabindex="-1" title="默认房间，不可修改">
+      </label>
+      <button id="joinRoomBtn" class="primary" type="button" disabled>连接中...</button>
+    </div>
     <div class="lobby-roster" id="lobbyRoster">
       <div class="lobby-roster-count" id="lobbyRosterCount">房间人数：—</div>
       <div class="lobby-roster-list" id="lobbyRosterList"></div>
@@ -284,7 +295,8 @@
     let offlineSim = false;
     let joinInFlight = false;
     let connectGeneration = 0; // 防止旧客户端回调污染新连接
-    let autoJoinDone = false; // 每个连接只自动进房一次
+    let lobbyReady = false; // 已连上 Photon 大厅，可手动加入
+    let preferRejoinNext = false; // 下一次手动加入时尝试 rejoin
     let botTimer = null;
     let lastSpinToken = '';
     let spinAnimTimer = null;
@@ -321,6 +333,57 @@
         localStorage.setItem(key, id);
       }
       return id;
+    }
+
+    function readPlayerName() {
+      return (document.getElementById('playerName').value || '').trim();
+    }
+
+    function normalizePlayerName(raw) {
+      const name = String(raw || '').trim().replace(/\s+/g, ' ');
+      if (!name) return '';
+      return name.slice(0, 16);
+    }
+
+    function applyMyPhotonName(name) {
+      const n = normalizePlayerName(name);
+      if (!n || !client) return;
+      try {
+        client.myActor().setName(n);
+      } catch (e) {
+        try { client.myActor().name = n; } catch (e2) {}
+      }
+    }
+
+    function actorDisplayName(actor) {
+      if (!actor) return '玩家';
+      const n = normalizePlayerName(actor.name);
+      if (n) return n;
+      return `玩家${actor.actorNr}`;
+    }
+
+    function setJoinControlsEnabled(enabled) {
+      const btn = document.getElementById('joinRoomBtn');
+      const nameInput = document.getElementById('playerName');
+      const inRoom = client && client.isJoinedToRoom && client.isJoinedToRoom();
+      if (btn) {
+        btn.disabled = !enabled || joinInFlight || offlineSim || inRoom;
+        if (inRoom) {
+          btn.textContent = '已在房间';
+        } else if (joinInFlight) {
+          btn.textContent = '加入中...';
+        } else if (!lobbyReady || offlineSim) {
+          btn.textContent = '连接中...';
+        } else {
+          btn.textContent = '加入房间';
+        }
+      }
+      if (nameInput) nameInput.disabled = offlineSim || inRoom;
+    }
+
+    function refreshJoinButton() {
+      const inRoom = !offlineSim && client && client.isJoinedToRoom && client.isJoinedToRoom();
+      setJoinControlsEnabled(lobbyReady && !inRoom && !joinInFlight);
     }
 
     function gameLog(msg) {
@@ -574,7 +637,10 @@
       myActorNr = 1;
       const actors = [];
       for (let i = 1; i <= n; i++) {
-        actors.push({ actorNr: i, name: i === 1 ? '我（模拟）' : `电脑${i}` });
+        actors.push({
+          actorNr: i,
+          name: i === 1 ? (normalizePlayerName(readPlayerName()) || '我（模拟）') : `电脑${i}`
+        });
       }
 
       gameState = createEmptyState();
@@ -653,7 +719,7 @@
       document.getElementById('firstSpinOverlay').classList.remove('show', 'landed');
       statusDiv.textContent = client && client.isJoinedToRoom()
         ? `已进入房间 · Master #${client.myRoomMasterActorNr()}`
-        : '已退出模拟';
+        : (lobbyReady ? '已连上服务器，请输入用户名后加入房间' : '已退出模拟');
       document.getElementById('roomInfo').textContent = '';
       gameLog('—— 已退出模拟对局 ——');
       render();
@@ -761,15 +827,28 @@
       if (!client) return;
       if (client.isJoinedToRoom()) {
         statusDiv.textContent = `已在房间 ${client.myRoom().name}`;
+        setJoinControlsEnabled(false);
         return;
       }
       if (joinInFlight) return;
 
-      preferredRoom = preferredRoom || DEFAULT_ROOM;
+      const playerName = normalizePlayerName(readPlayerName());
+      if (!playerName) {
+        statusDiv.textContent = '请先输入用户名';
+        alert('请输入用户名后再加入房间');
+        document.getElementById('playerName').focus();
+        return;
+      }
+      document.getElementById('playerName').value = playerName;
+      localStorage.setItem('dr_player_name', playerName);
+      applyMyPhotonName(playerName);
+
+      preferredRoom = DEFAULT_ROOM;
       joinInFlight = true;
+      setJoinControlsEnabled(false);
 
       if (preferRejoin) {
-        gameLog(`尝试重连房间 ${preferredRoom}...`);
+        gameLog(`尝试重连房间 ${preferredRoom}（${playerName}）...`);
         statusDiv.textContent = `正在重连房间 ${preferredRoom}...`;
         window.__rejoinPending = true;
         const ok = client.joinRoom(preferredRoom, { rejoin: true });
@@ -785,16 +864,18 @@
     function joinCreateRoom() {
       if (!client) {
         joinInFlight = false;
+        setJoinControlsEnabled(lobbyReady);
         return;
       }
       window.__rejoinPending = false;
-      preferredRoom = preferredRoom || DEFAULT_ROOM;
+      preferredRoom = DEFAULT_ROOM;
       joinInFlight = true;
       gameLog(`加入/创建房间 ${preferredRoom}（空房保活开启）...`);
       statusDiv.textContent = `正在加入房间 ${preferredRoom}...`;
       const ok = client.joinRoom(preferredRoom, { createIfNotExists: true }, ROOM_OPTS);
       if (!ok) {
         joinInFlight = false;
+        setJoinControlsEnabled(lobbyReady);
         statusDiv.textContent = '加入房间失败：尚未连上大厅，请点「重连」';
         gameLog('joinRoom 返回 false（可能未连上 Master）');
       }
@@ -836,6 +917,7 @@
       window.__rejoinPending = false;
       statusDiv.textContent = statusText || '已回到大厅';
       document.getElementById('roomInfo').textContent = '';
+      setJoinControlsEnabled(lobbyReady);
       render();
     }
 
@@ -886,8 +968,7 @@
         } catch (e) {}
         sessionStorage.removeItem('dr_room');
         preferredRoom = DEFAULT_ROOM;
-        // 保持 autoJoinDone=true，避免立刻又自动加回去
-        resetToLobbyLocal(`房间 ${roomName} 已解散 · 点「重连」可再开新局`);
+        resetToLobbyLocal(`房间 ${roomName} 已解散 · 输入用户名后可再加入`);
         gameLog(`—— 房间 ${roomName} 已解散 ——`);
       }, 120);
     }
@@ -900,7 +981,7 @@
       } catch (e) {}
       sessionStorage.removeItem('dr_room');
       preferredRoom = DEFAULT_ROOM;
-      resetToLobbyLocal(`房间 ${roomName} 已被房主解散 · 点「重连」可再加入`);
+      resetToLobbyLocal(`房间 ${roomName} 已被房主解散 · 输入用户名后可再加入`);
     }
 
     function disconnectClient() {
@@ -1817,8 +1898,9 @@
         const tags = [];
         if (isMe) tags.push('你');
         if (isMaster) tags.push('房主');
+        const display = actorDisplayName(a);
         return `<div class="lobby-roster-item${isMe ? ' is-me' : ''}">
-          <span>玩家 #${a.actorNr}</span>
+          <span>${display} <span class="tag">#${a.actorNr}</span></span>
           <span class="tag">${tags.join(' · ') || '已就绪'}</span>
         </div>`;
       }).join('');
@@ -1827,9 +1909,9 @@
     function render() {
       const inRoom = !offlineSim && client && client.isJoinedToRoom();
       document.getElementById('roomInfo').textContent = offlineSim
-        ? '本地模拟 · 无需联机'
+        ? `本地模拟 · ${normalizePlayerName(readPlayerName()) || '我'}`
         : inRoom
-          ? `房间 ${client.myRoom().name} · ${client.myRoom().playerCount}人 · #${myActorNr}${isHost() ? ' 房主' : ''}`
+          ? `房间 ${client.myRoom().name} · ${client.myRoom().playerCount}人 · ${normalizePlayerName(readPlayerName()) || actorDisplayName(client.myActor())} · #${myActorNr}${isHost() ? ' 房主' : ''}`
           : '';
 
       document.getElementById('startBtn').disabled = offlineSim || !(isHost() && (!view || view.phase === 'lobby' || view.phase === 'ended'));
@@ -1841,6 +1923,7 @@
         disbandBtn.style.display = (inRoom && isHost()) ? '' : 'none';
         disbandBtn.disabled = !inRoom || !isHost();
       }
+      setJoinControlsEnabled(lobbyReady && !inRoom && !joinInFlight);
 
       if (!view || view.phase === 'lobby') {
         document.getElementById('lobbyPanel').style.display = '';
@@ -1941,7 +2024,7 @@
           isFxTarget ? 'fx-hit' : ''
         ].join(' ');
         const name = isMe
-          ? `你 · <span class="seat-nr">#${p.actorNr}</span>`
+          ? `你 · ${p.name} <span class="seat-nr">#${p.actorNr}</span>`
           : `${p.name} <span class="seat-nr">#${p.actorNr}</span>`;
         const canShoot = myTurn && p.alive;
         const shootBtn = `<button type="button" class="seat-shoot-btn" data-shoot="${p.actorNr}" ${canShoot ? '' : 'disabled'}>开枪</button>`;
@@ -2162,9 +2245,10 @@
 
     function startGameAsHost() {
       if (!isHost()) return;
+      applyMyPhotonName(readPlayerName());
       const actors = roomActors().map((a) => ({
         actorNr: a.actorNr,
-        name: `玩家${a.actorNr}`
+        name: actorDisplayName(a)
       }));
       if (actors.length < 2) {
         alert('至少需要 2 名玩家');
@@ -2215,14 +2299,17 @@
 
       const gen = ++connectGeneration;
       joinInFlight = false;
-      autoJoinDone = false;
+      lobbyReady = false;
+      preferRejoinNext = !!preferRejoin;
       window.__rejoinPending = false;
       client = new LBC(Photon.ConnectionProtocol.Wss, APP_ID, APP_VERSION);
       client.setUserId(getStableUserId());
+      setJoinControlsEnabled(false);
 
       client.onError = function (errorCode, errorMsg) {
         if (gen !== connectGeneration) return;
         joinInFlight = false;
+        setJoinControlsEnabled(lobbyReady);
         statusDiv.textContent = `连接错误: ${errorCode} - ${errorMsg}`;
         gameLog(`错误: [${errorCode}] ${errorMsg}`);
       };
@@ -2240,6 +2327,7 @@
         }
 
         joinInFlight = false;
+        setJoinControlsEnabled(lobbyReady);
         const tip = describeJoinError(errorCode, errorMsg);
         statusDiv.textContent = `加入失败：${tip}`;
       };
@@ -2249,22 +2337,29 @@
         const name = (LBC.StateToName && LBC.StateToName[state]) || String(state);
 
         if (state === LBC.State.JoinedLobby) {
-          // 每个连接只自动进房一次，避免房间满员时反复重试刷屏
-          if (autoJoinDone || joinInFlight) return;
-          if (client.isJoinedToRoom && client.isJoinedToRoom()) return;
-          autoJoinDone = true;
-          statusDiv.textContent = '已连上大厅，正在进入房间...';
-          preferredRoom = sessionStorage.getItem('dr_room') || preferredRoom || DEFAULT_ROOM;
-          joinPreferredRoom(!!preferRejoin);
+          lobbyReady = true;
+          joinInFlight = false;
+          // 不再自动进房：等用户输入用户名后手动点「加入房间」
+          if (client.isJoinedToRoom && client.isJoinedToRoom()) {
+            setJoinControlsEnabled(false);
+            return;
+          }
+          statusDiv.textContent = '已连上服务器，请输入用户名后加入房间';
+          setJoinControlsEnabled(true);
+          render();
         } else if (state === LBC.State.ConnectingToNameServer || state === LBC.State.ConnectingToMasterserver) {
           statusDiv.textContent = '正在连接服务器...';
         } else if (state === LBC.State.ConnectingToGameserver) {
           statusDiv.textContent = '正在进入游戏服...';
         } else if (state === LBC.State.Disconnected) {
+          lobbyReady = false;
           joinInFlight = false;
+          setJoinControlsEnabled(false);
           statusDiv.textContent = '已断开连接';
         } else if (state === LBC.State.Error) {
+          lobbyReady = false;
           joinInFlight = false;
+          setJoinControlsEnabled(false);
           statusDiv.textContent = `连接异常（${name}）`;
         }
       };
@@ -2274,10 +2369,14 @@
         myActorNr = client.myActor().actorNr;
         window.__rejoinPending = false;
         joinInFlight = false;
-        preferredRoom = (client.myRoom() && client.myRoom().name) || preferredRoom || DEFAULT_ROOM;
+        preferRejoinNext = false;
+        preferredRoom = DEFAULT_ROOM;
         sessionStorage.setItem('dr_room', preferredRoom);
-        statusDiv.textContent = `已进入房间 ${preferredRoom} · #${myActorNr}${isHost() ? ' · 房主' : ''}`;
-        gameLog(`加入成功，房间=${preferredRoom}，我是 #${myActorNr}，UserId=${client.getUserId()}，Master=#${client.myRoomMasterActorNr()}`);
+        applyMyPhotonName(readPlayerName());
+        const myName = actorDisplayName(client.myActor());
+        setJoinControlsEnabled(false);
+        statusDiv.textContent = `已进入房间 · ${myName} · #${myActorNr}${isHost() ? ' · 房主' : ''}`;
+        gameLog(`加入成功，名称=${myName}，房间=${preferredRoom}，座位 #${myActorNr}，Master=#${client.myRoomMasterActorNr()}`);
 
         // 若房间里已有存档且我是房主，恢复
         if (isHost()) {
@@ -2296,7 +2395,7 @@
 
       client.onActorJoin = function (actor) {
         if (gen !== connectGeneration) return;
-        gameLog(`玩家加入 #${actor.actorNr}`);
+        gameLog(`玩家加入 ${actorDisplayName(actor)}（#${actor.actorNr}）`);
         if (isHost() && gameState) persistAndBroadcast();
         render();
       };
@@ -2584,7 +2683,7 @@
           ? `<img src="${role.art}" alt="${role.name}" draggable="false">`
           : `<span class="glyph">${role.glyph}</span>`;
         const name = isMe
-          ? `你 · <span class="seat-nr">#${p.actorNr}</span>`
+          ? `你 · ${p.name} <span class="seat-nr">#${p.actorNr}</span>`
           : `${p.name} · <span class="seat-nr">#${p.actorNr}</span>`;
         const meta = `${role.name}${p.alive ? '' : ' · 出局'}${p.team != null && view.mode === 'team' ? (p.team === 0 ? ' · 红' : ' · 蓝') : ''}`;
         return `<button type="button" class="player-pick-card" data-actor="${p.actorNr}" ${can ? '' : 'disabled'}>
@@ -3046,14 +3145,37 @@
 
     document.getElementById('disbandBtn').onclick = () => disbandRoomAsHost();
 
+    document.getElementById('joinRoomBtn').onclick = () => {
+      if (offlineSim) return;
+      if (!lobbyReady) {
+        alert('尚未连上服务器，请稍候或点「重连」');
+        return;
+      }
+      const useRejoin = preferRejoinNext;
+      preferRejoinNext = false;
+      joinPreferredRoom(useRejoin);
+    };
+
+    document.getElementById('playerName').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('joinRoomBtn').click();
+      }
+    });
+
     document.getElementById('reconnectBtn').onclick = () => {
+      // 重连只恢复服务器连接；仍需手动点「加入房间」（会尝试 rejoin 原座位）
       reconnectClient(true);
     };
 
-    // 刷新后自动尝试 rejoin 上次房间
-    const lastRoom = sessionStorage.getItem('dr_room');
-    if (lastRoom) preferredRoom = lastRoom;
-    createClient(!!lastRoom);
+    // 预填用户名；房间号固定默认，不自动进房
+    const roomDisplay = document.getElementById('roomNameDisplay');
+    if (roomDisplay) roomDisplay.value = DEFAULT_ROOM;
+    const savedName = localStorage.getItem('dr_player_name');
+    if (savedName) document.getElementById('playerName').value = savedName;
+    preferredRoom = DEFAULT_ROOM;
+    setJoinControlsEnabled(false);
+    createClient(false);
   </script>
 </body>
 
