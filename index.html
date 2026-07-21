@@ -2825,7 +2825,7 @@
       if (itemId === 'double_arrow') {
         openPlayerPicker({
           title: '一箭双雕',
-          sub: '选择 1~2 名玩家建立连锁（每人同时仅可与一人连锁；冲突时旧连锁自动解除）；也可直接解除全部连锁',
+          sub: '选择 1~2 名玩家建立连锁（同时承受下一次任意伤害，随后自动解除）；也可解除场上全部连锁',
           players: view.players,
           selectable: (p) => p.alive,
           min: 1,

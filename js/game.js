@@ -554,7 +554,10 @@ function linkPairLabel(state, pair) {
 }
 
 function findLinkPairIndex(state, actorNr) {
-  return state.effects.linkedPairs.findIndex((pair) => pair.includes(actorNr));
+  const nr = Number(actorNr);
+  return state.effects.linkedPairs.findIndex((pair) =>
+    pair.some((x) => Number(x) === nr)
+  );
 }
 
 /** 解除与给定玩家有交集的连锁组；每人同时仅可与一人连锁 */
@@ -563,7 +566,7 @@ function dissolveConflictingLinks(state, actorNrs) {
   const kept = [];
   const dissolved = [];
   state.effects.linkedPairs.forEach((pair) => {
-    if (pair.some((nr) => set.has(nr))) dissolved.push(pair);
+    if (pair.some((nr) => set.has(Number(nr)))) dissolved.push(pair);
     else kept.push(pair);
   });
   if (!dissolved.length) return;
@@ -580,24 +583,21 @@ function removeLinkPairAt(state, index) {
 }
 
 function flattenLinked(state) {
-  return [...new Set(state.effects.linkedPairs.flat())];
+  return [...new Set(state.effects.linkedPairs.flat().map((nr) => Number(nr)))];
 }
 
-function applyDamage(state, target, amount, sourceMsg, opts) {
+function applyDamage(state, target, amount, sourceMsg) {
   if (!target.alive || amount <= 0) return;
-  const allowChain = !(opts && opts.chain === false);
-  const pairIdx = allowChain ? findLinkPairIndex(state, target.actorNr) : -1;
+  const pairIdx = findLinkPairIndex(state, target.actorNr);
   const pair = pairIdx >= 0 ? state.effects.linkedPairs[pairIdx].slice() : null;
   const victims = [target];
-  // 仅当受伤者本身在连锁中时，其配对对象一并受伤
   if (pair) {
     pair.forEach((nr) => {
-      if (nr === target.actorNr) return;
+      if (Number(nr) === Number(target.actorNr)) return;
       const p = getPlayer(state, nr);
       if (p && p.alive) victims.push(p);
     });
   }
-  // 连锁：同时各扣
   victims.forEach((v) => {
     v.hp -= amount;
     logState(state, `${sourceMsg || ''}${v.name} 受到 ${amount} 点伤害（剩余 ${Math.max(v.hp, 0)}）。`);
@@ -607,11 +607,20 @@ function applyDamage(state, target, amount, sourceMsg, opts) {
       logState(state, `${v.name} 出局！`);
     }
   });
-  if (pair) {
+  if (pairIdx >= 0) {
     removeLinkPairAt(state, pairIdx);
-    logState(state, '连锁已触发并清除。');
+    logState(state, victims.length > 1 ? '连锁已触发并解除。' : '连锁因受到伤害而解除。');
   }
   checkWin(state);
+}
+
+/** 解除该玩家所在连锁（用于夜枭等已批量结算伤害后的清理） */
+function breakLinkAfterAnyDamage(state, actorNr) {
+  const pairIdx = findLinkPairIndex(state, actorNr);
+  if (pairIdx < 0) return false;
+  removeLinkPairAt(state, pairIdx);
+  logState(state, '连锁因受到伤害而解除。');
+  return true;
 }
 
 function heal(state, player, amount) {
@@ -757,7 +766,9 @@ function continueAfterShotReveal(state) {
       pairIndexes.forEach((idx) => {
         state.effects.linkedPairs[idx].forEach((nr) => {
           const p = getPlayer(state, nr);
-          if (p && p.alive && !victims.includes(p)) victims.push(p);
+          if (p && p.alive && !victims.some((v) => Number(v.actorNr) === Number(p.actorNr))) {
+            victims.push(p);
+          }
         });
       });
       victims.forEach((v) => {
@@ -769,10 +780,8 @@ function continueAfterShotReveal(state) {
           logState(state, `${v.name} 出局！`);
         }
       });
-      if (pairIndexes.length) {
-        pairIndexes.sort((a, b) => b - a).forEach((idx) => removeLinkPairAt(state, idx));
-        logState(state, '连锁已触发并清除。');
-      }
+      // 任意被扣血者所在连锁一律解除
+      victims.forEach((v) => breakLinkAfterAnyDamage(state, v.actorNr));
       checkWin(state);
     } else {
       applyDamage(state, target, dmg, '');
@@ -945,14 +954,13 @@ function rattlesnakeCopy(state, actorNr) {
 
   const itemId = state.lastItemForSnake.itemId;
   const itemName = ITEMS[itemId] ? ITEMS[itemId].name : itemId;
-  p.hp -= 1;
   state.rattlesnakeUsedThisRound[actorNr] = true;
   state.awaiting = null;
 
-  if (p.hp <= 0) {
-    p.alive = false;
-    logState(state, `${p.name}（响尾蛇）消耗 1 血复制【${itemName}】后出局！`);
-    checkWin(state);
+  // 消耗血量视为受到伤害：连锁对象一同扣血，随后连锁解除
+  applyDamage(state, p, 1, '响尾蛇复制：');
+  if (!p.alive) {
+    logState(state, `${p.name}（响尾蛇）复制【${itemName}】后出局。`);
     beginRattlesnakeWindow(state);
     return { ok: true };
   }
@@ -1038,7 +1046,7 @@ function continueAfterPainkillerDice(state) {
   if (!player) return { ok: false, reason: '玩家不存在' };
 
   logState(state, `止痛药掷出 ${roll}（${roll % 2 === 1 ? '奇数' : '偶数'}）。`);
-  if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：', { chain: false });
+  if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：');
   else heal(state, player, 2);
 
   if (offerSnake) offerRattlesnake(state, player, 'painkiller', {});
@@ -1215,7 +1223,7 @@ function applyItemEffect(state, player, itemId, payload) {
         startItemFx(state, player, itemId, payload, { unlock: true, linkNames: [] });
       } else {
         const targets = (payload.targets || []).map((nr) => getPlayer(state, nr)).filter((p) => p && p.alive);
-        const ids = [...new Set(targets.map((p) => p.actorNr))].slice(0, 2);
+        const ids = [...new Set(targets.map((p) => Number(p.actorNr)))].slice(0, 2);
         dissolveConflictingLinks(state, ids);
         state.effects.linkedPairs.push(ids);
         logState(state, `连锁目标：${targets.map((p) => p.name).join('、') || '无'}。`);
