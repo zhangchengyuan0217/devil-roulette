@@ -524,24 +524,6 @@ button.primary {
   }
 }
 
-@media (max-width: 720px) {
-  .board-arena {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    grid-template-areas:
-      "top top"
-      "left right"
-      "felt felt";
-    max-width: 100%;
-  }
-
-  .board-arena .felt,
-  .felt {
-    max-width: 100%;
-    border-radius: 28% / 22%;
-  }
-}
-
 .cylinder {
   display: flex;
   gap: 6px;
@@ -766,12 +748,14 @@ button.primary {
   letter-spacing: 0.02em;
 }
 
-@media (max-width: 720px) {
-  .me-zone {
-    grid-template-columns: auto minmax(0, 1fr);
-    justify-items: stretch;
-  }
-  .hand-block { align-items: flex-start; }
+.hand-hint-touch {
+  display: none;
+}
+
+/* 仅手机横屏：点选预览提示（竖屏不改） */
+@media (orientation: landscape) and (max-height: 520px) {
+  .hand-hint-desktop { display: none; }
+  .hand-hint-touch { display: inline; }
 }
 
 .hand-fan {
@@ -1472,12 +1456,14 @@ button.primary {
   pointer-events: none;
 }
 
-/* 未选中：槽位悬停时轻微抬起（大图看 .hand-preview） */
-.hand-slot:not(.is-selected):hover .item-card,
-.hand-slot:not(.is-selected):focus-within .item-card {
-  transform: translateY(-22px) scale(1.08) rotate(0deg);
-  box-shadow: 0 18px 28px rgba(0,0,0,0.55);
-  border-color: rgba(255,255,255,0.55);
+/* 未选中：槽位悬停时轻微抬起（大图看 .hand-preview；仅精确指针设备） */
+@media (hover: hover) and (pointer: fine) {
+  .hand-slot:not(.is-selected):hover .item-card,
+  .hand-slot:not(.is-selected):focus-within .item-card {
+    transform: translateY(-22px) scale(1.08) rotate(0deg);
+    box-shadow: 0 18px 28px rgba(0,0,0,0.55);
+    border-color: rgba(255,255,255,0.55);
+  }
 }
 
 /* 选中：上移固定，金边高亮 */
@@ -2895,4 +2881,329 @@ button.primary {
   font-size: 1.1rem;
   letter-spacing: 0.15em;
   box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+}
+
+/* =========================================================
+   手机横屏对局适配（竖屏不做特殊布局）
+   典型：iPhone 横屏可视高度约 300–420px
+   ========================================================= */
+@media (orientation: landscape) and (max-height: 520px) {
+  :root {
+    --hand-preview-w: 100px;
+    --hand-preview-h: 140px;
+  }
+
+  .topbar {
+    padding: 2px 8px;
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+    gap: 6px;
+  }
+
+  .brand {
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+  }
+
+  .topbar .meta {
+    font-size: 0.58rem;
+    max-width: 36vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-controls button,
+  .topbar-controls summary {
+    padding: 3px 7px;
+    font-size: 0.68rem;
+  }
+
+  #roomInfo {
+    display: none;
+  }
+
+  .table-wrap {
+    padding: 1px 4px 0;
+    padding-left: max(4px, env(safe-area-inset-left, 0px));
+    padding-right: max(4px, env(safe-area-inset-right, 0px));
+  }
+
+  .table-wrap.active,
+  .table-wrap.layout-cross {
+    gap: 1px;
+    overflow: hidden;
+  }
+
+  .round-banner {
+    font-size: 0.62rem;
+    padding: 0 2px;
+    line-height: 1.2;
+  }
+
+  /* 保持十字座位：上 / 左毡右，全面压缩高度 */
+  .board-arena {
+    grid-template-columns: minmax(72px, 100px) minmax(0, 1fr) minmax(72px, 100px);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      ". top ."
+      "left felt right";
+    max-width: 100%;
+    gap: 1px 4px;
+    padding: 0 2px 1px;
+    overflow: hidden;
+    align-items: center;
+  }
+
+  .seat-top {
+    max-width: 100px;
+  }
+
+  .seat-left,
+  .seat-right,
+  .seat-top {
+    padding: 1px;
+  }
+
+  .seat-left .seat-shot-wrap,
+  .seat-right .seat-shot-wrap {
+    gap: 3px;
+  }
+
+  .seat-left .seat-shoot-btn,
+  .seat-right .seat-shoot-btn {
+    writing-mode: horizontal-tb;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    min-height: 0;
+    min-width: 40px;
+    font-size: 0.62rem;
+  }
+
+  .board-arena .seat-slot::before {
+    font-size: 0.52rem;
+    margin-bottom: 0;
+  }
+
+  .board-arena .role-card {
+    width: 56px;
+    height: 82px;
+  }
+
+  .board-arena .role-card .art {
+    height: 36px;
+  }
+
+  .board-arena .role-card .desc {
+    display: none;
+  }
+
+  .board-arena .role-card .body {
+    padding: 2px 3px 8px;
+    gap: 1px;
+  }
+
+  .seat-name {
+    font-size: 0.58rem;
+  }
+
+  /* 触摸勿 sticky hover 放大 */
+  .hero-seat:hover .role-card,
+  .me-zone .hero-seat:hover .role-card,
+  .board-arena .hero-seat:hover .role-card,
+  .hero-seat.selected:hover .role-card,
+  .hero-seat.turn:hover .role-card {
+    transform: none;
+  }
+
+  .hero-seat:not(.turn):hover .role-card {
+    animation: none;
+    box-shadow: none;
+  }
+
+  .hero-seat.selected .role-card,
+  .hero-seat.selected:hover .role-card {
+    box-shadow: 0 0 0 2px var(--gold), 0 6px 14px rgba(0,0,0,0.45);
+  }
+
+  .board-arena .felt {
+    padding: 4px 6px;
+    min-height: 0;
+    max-width: 100%;
+  }
+
+  .loadout-row {
+    gap: 4px;
+    margin-bottom: 1px;
+  }
+
+  .ammo-chip {
+    padding: 1px 5px;
+    font-size: 0.58rem;
+  }
+
+  .shell {
+    width: 12px;
+    height: 18px;
+  }
+
+  .felt-status {
+    font-size: 0.58rem;
+  }
+
+  .pill {
+    font-size: 0.55rem;
+    padding: 1px 4px;
+  }
+
+  .bottom-panel {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .me-zone {
+    gap: 6px;
+    padding: 2px 6px 1px;
+    align-items: end;
+  }
+
+  .me-zone .role-card {
+    width: 48px;
+    height: 72px;
+  }
+
+  .me-zone .role-card .art {
+    height: 30px;
+  }
+
+  .me-zone .role-card .desc {
+    display: none;
+  }
+
+  .me-zone .role-card .body {
+    padding: 2px 3px 6px;
+  }
+
+  .me-zone .seat-shoot-btn {
+    padding: 3px 7px;
+    font-size: 0.62rem;
+    min-width: 40px;
+  }
+
+  .hand-label {
+    font-size: 0.58rem;
+    margin-bottom: 1px;
+  }
+
+  .item-card {
+    width: 44px;
+    height: 62px;
+    border-radius: 5px;
+  }
+
+  .hand-slot {
+    width: 40px;
+    height: 62px;
+    margin-left: -10px;
+  }
+
+  .hand-slot:first-child {
+    margin-left: 0;
+  }
+
+  .hand-fan {
+    min-height: 66px;
+    height: 66px;
+    padding: 1px 6px 0 2px;
+  }
+
+  .hand-slot.is-selected .item-card,
+  .item-card.selected {
+    transform: translateY(-10px) rotate(0deg);
+  }
+
+  .item-card .art-glyph {
+    font-size: 1.1rem;
+  }
+
+  .item-card .fallback-name {
+    font-size: 0.52rem;
+    margin-top: 2px;
+  }
+
+  .hand-preview {
+    position: fixed;
+    left: 50% !important;
+    right: auto;
+    bottom: auto;
+    top: 42%;
+    z-index: 220;
+    max-width: min(220px, 42vw);
+  }
+
+  .hand-preview.is-visible {
+    transform: translateX(-50%) translateY(-50%) scale(1);
+  }
+
+  .hand-preview:not(.is-visible) {
+    transform: translateX(-50%) translateY(-46%) scale(0.94);
+  }
+
+  .hand-preview-meta {
+    padding: 4px 8px;
+    max-width: 200px;
+  }
+
+  .hand-preview-name {
+    font-size: 0.75rem;
+  }
+
+  .hand-preview-desc {
+    font-size: 0.58rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .gunpowder-dock {
+    padding: 3px 6px;
+    gap: 4px;
+    margin-top: 1px;
+  }
+
+  .gunpowder-dock-label {
+    font-size: 0.52rem;
+  }
+
+  .actions-dock {
+    padding: 3px 8px max(4px, env(safe-area-inset-bottom, 0px));
+    gap: 6px;
+  }
+
+  .actions-dock button {
+    padding: 5px 10px;
+    font-size: 0.72rem;
+  }
+
+  .private-toast {
+    font-size: 0.6rem;
+  }
+
+  .hp-drop {
+    width: 7px;
+    height: 7px;
+  }
+
+  .hand-count {
+    font-size: 0.52rem;
+    padding: 1px 4px;
+  }
+
+  .flip-scene,
+  .flip-inner,
+  .flip-face .role-card,
+  .card-back {
+    width: min(120px, 28vw);
+    height: min(186px, 44vw);
+  }
 }

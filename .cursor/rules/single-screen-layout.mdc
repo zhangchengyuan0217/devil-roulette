@@ -1,5 +1,5 @@
 ---
-description: Devil Roulette 对局单屏布局硬性规则（100dvh、手牌完整、炉石式预览、工具栏可见）
+description: Devil Roulette 对局单屏布局（100dvh、手牌、预览、仅手机横屏适配）
 globs: css/style.css,index.html,**/layout.md
 alwaysApply: false
 ---
@@ -10,39 +10,20 @@ alwaysApply: false
 
 ## 硬性目标
 
-1. **单屏锁定**：`html, body` 为 `100vw × 100dvh`，对局中 `overflow: hidden`，**禁止页面滚动条**。
-2. **手牌完整显示**：道具手牌静止态必须整张可见，不得被视口底边 / 工具栏 / 父容器裁切。
-3. **悬停预览（炉石式）**：手牌只轻抬；大图在独立层 `.hand-preview`，盖在牌桌上方，不得被挡住。
-4. **底部工具栏固定可见**：`.actions-dock`（使用道具等）必须完整在视口内。
-
-`body.phase-ended` 可临时允许滚动。
-
-## 结构
-
-```
-body (100dvh, flex column, overflow hidden)
-├── .topbar                 /* flex: 0 0 auto */
-└── .table-wrap.active      /* flex: 1; min-height: 0; grid */
-    ├── .round-banner       /* auto */
-    ├── .board-arena        /* minmax(0, 1fr) —— 唯一可压缩区 */
-    └── .bottom-panel       /* 0 0 auto —— 按内容撑开，不可压扁 */
-        ├── .me-zone
-        │   └── .hand-block → .hand-preview + .hand-fan
-        └── .actions-dock
-```
+1. **单屏锁定**：`100dvh` + `overflow: hidden`，对局禁止页面滚动条。
+2. **手牌完整显示**：静止态整张可见。
+3. **预览**：桌面悬停轻抬 + `.hand-preview`；手机横屏点选 + fixed 居中。**竖屏不做特殊适配**。
+4. **`.actions-dock` 始终完整可见**。
 
 ## 禁止事项
 
-- ❌ 给 `.bottom-panel` 过小的 `max-height` 压扁手牌/工具栏
-- ❌ `.hand-fan` 用大额负 `margin-top` 把静止手牌推出视口
-- ❌ 压缩 `.me-zone` / `.actions-dock`（须 `flex: 0 0 auto`）来「省高度」
-- ❌ 对手牌本身做 ≥2× 缩放来当预览（大图必须走 `.hand-preview`）
-- ❌ 让顶座位（红队）横向拉满；宽度应与左右蓝队座位列一致
-- ❌ 左右座位把「开枪」放在角色牌正下方且整体居中（矮屏时会压到分界线以下被底栏挡住）
+- ❌ 压扁 `.bottom-panel` / `.me-zone` / `.actions-dock` 来「省高度」
+- ❌ 对手牌本身做 ≥2× 缩放当预览
+- ❌ 为竖屏手机单独改对局十字布局（只需横屏）
 
 ## 正确做法
 
 - ✅ 只让 `.board-arena` 吸收剩余高度
-- ✅ `.bottom-panel` 的 `z-index` **高于** `.board-arena`；`.hand-preview` 再高于手牌区
-- ✅ 悬停：`.hand-slot` 命中区固定；`.item-card` 轻抬；`syncHandPreview()` 更新独立大图
-- ✅ 改完后自测：1280×720 / 1920×1080 无滚动条；手牌四角可见；悬停有大图预览；「使用道具」可点；四座位「开枪」完整可点
+- ✅ 手机适配仅用：`(orientation: landscape) and (max-height: 520px)`
+- ✅ 横屏压缩角色/手牌、关 hover 放大、预览 fixed、safe-area
+- ✅ 自测：桌面 + 手机横屏

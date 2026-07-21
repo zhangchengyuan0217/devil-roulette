@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>恶魔转盘</title>
   <link rel="stylesheet" href="./css/style.css">
   <script src="./lib/Photon-Javascript_SDK.js"></script>
@@ -94,7 +94,7 @@
               <div class="hand-preview-desc" id="handPreviewDesc"></div>
             </div>
           </div>
-          <div class="hand-label">我的道具手牌 <span class="hand-hint">悬停预览 · 点选上移 · 每次用 1 张</span></div>
+          <div class="hand-label">我的道具手牌 <span class="hand-hint hand-hint-desktop">悬停预览 · 点选上移 · 每次用 1 张</span><span class="hand-hint hand-hint-touch">点选预览 · 再点取消 · 每次用 1 张</span></div>
           <div class="hand-fan" id="hand"></div>
           <div class="private-toast" id="privateInfo"></div>
           <div class="gunpowder-dock" id="gunpowderDock" hidden>
@@ -1953,7 +1953,7 @@
       nameEl.textContent = it.name || '';
       descEl.textContent = it.desc || '';
 
-      if (block && anchorEl) {
+      if (block && anchorEl && !window.matchMedia('(orientation: landscape) and (max-height: 520px)').matches) {
         const blockRect = block.getBoundingClientRect();
         const slotRect = anchorEl.getBoundingClientRect();
         const centerX = slotRect.left + slotRect.width / 2 - blockRect.left;
