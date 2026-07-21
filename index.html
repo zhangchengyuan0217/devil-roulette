@@ -297,6 +297,9 @@
     let handPreviewHoverIdx = null;
     /** 二次点击取消选中后，抑制预览直到鼠标离开该牌（避免 render 重建触发 mouseenter） */
     let handPreviewSuppressUntilLeave = false;
+    let skillTipActorNr = null;
+    /** 点击关闭角色描述后，抑制 hover 直到鼠标离开（避免 render 重建再次弹出） */
+    let skillTipSuppressHover = false;
     let selectedTarget = null;
     let myActorNr = 0;
     let lastRevealKey = '';
@@ -1055,11 +1058,14 @@
       if (!tip) return;
       if (!roleId) {
         tip.classList.remove('show');
+        skillTipActorNr = null;
         return;
       }
       const role = roleMeta(roleId);
       tip.innerHTML = `<strong>${playerName || ''} · ${role.name}</strong><span>${role.desc}</span>`;
       tip.classList.add('show');
+      skillTipActorNr = Number(anchorEl && anchorEl.dataset && anchorEl.dataset.actor);
+      if (!Number.isFinite(skillTipActorNr)) skillTipActorNr = null;
 
       // 先显示再量尺寸，贴在卡牌旁，不挤占布局
       const pad = 12;
@@ -1078,6 +1084,20 @@
       top = Math.max(pad, top);
 
       tip.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+    }
+
+    function toggleSkillTip(el) {
+      if (!el) return;
+      const nr = Number(el.dataset.actor);
+      const tip = document.getElementById('skillTip');
+      const openForThis = tip && tip.classList.contains('show') && skillTipActorNr === nr;
+      if (openForThis) {
+        showSkillTip(null);
+        skillTipSuppressHover = true;
+      } else {
+        skillTipSuppressHover = false;
+        showSkillTip(el.dataset.role, el.dataset.name, el);
+      }
     }
 
     function maybeShowReveal(cameFromLobby) {
@@ -2102,10 +2122,19 @@
         if (!root) return;
         root.querySelectorAll('.hero-seat').forEach((el) => {
           const nr = Number(el.dataset.actor);
-          el.onmouseenter = () => showSkillTip(el.dataset.role, el.dataset.name, el);
-          el.onmouseleave = () => showSkillTip(null);
-          if (nr === myActorNr) return;
-          el.onclick = () => {
+          el.onmouseenter = () => {
+            if (skillTipSuppressHover) return;
+            showSkillTip(el.dataset.role, el.dataset.name, el);
+          };
+          el.onmouseleave = () => {
+            skillTipSuppressHover = false;
+            showSkillTip(null);
+          };
+          el.onclick = (e) => {
+            // 开枪按钮自行 stopPropagation；点角色牌切换描述
+            if (e.target.closest && e.target.closest('.seat-shoot-btn')) return;
+            toggleSkillTip(el);
+            if (nr === myActorNr) return;
             selectedTarget = selectedTarget === nr ? null : nr;
             render();
           };
