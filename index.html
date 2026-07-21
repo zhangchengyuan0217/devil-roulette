@@ -1504,7 +1504,7 @@
       card.classList.remove('ready');
       if (shutter) shutter.style.height = '100%';
 
-      // 黑卡先入场，再自上而下揭开弹面
+      // 黑卡先入场，再自上而下揭开弹面（遮罩贴底收缩）
       requestAnimationFrame(() => {
         card.classList.add('ready');
         shotRevealTimer = setTimeout(() => {
