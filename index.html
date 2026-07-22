@@ -1504,6 +1504,15 @@
       }, 85);
     }
 
+    function playItemSfx(itemId) {
+      if (!itemId || !ITEMS[itemId]) return;
+      try {
+        const audio = new Audio(`assets/audio/${itemId}.mp3`);
+        const p = audio.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (_) {}
+    }
+
     function finishPainkillerDice() {
       sendAction({ type: 'painkiller_dice_done' });
     }
@@ -1539,6 +1548,7 @@
         diceAnimTimer = null;
       }
 
+      playItemSfx('painkiller');
       const target = awaiting.roll || 1;
       const odd = target % 2 === 1;
       const who = awaiting.name || `玩家#${awaiting.actorNr}`;
@@ -1626,6 +1636,7 @@
         ejectAnimTimer = null;
       }
 
+      playItemSfx('eject');
       const bullet = awaiting.bullet;
       const kindClass = bullet === 'live' ? 'is-live' : bullet === 'blank' ? 'is-blank' : 'is-special';
       const name = bulletLabel(bullet);
@@ -1882,6 +1893,7 @@
         itemFxTimer = null;
       }
 
+      playItemSfx(awaiting.itemId);
       const itemName = awaiting.itemName || '道具';
       const who = awaiting.name || `玩家#${awaiting.actorNr}`;
       const mine = Number(awaiting.actorNr) === Number(myActorNr);
