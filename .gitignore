@@ -2,7 +2,6 @@
 node_modules/
 
 # 暂时忽略
-assets/rule/roles
 assets/rule/tools
 assets/rule/bullets
 assets/rule/background

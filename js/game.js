@@ -137,7 +137,9 @@ function initPlayers(state, actors, mode) {
     hand: [],
     alive: true,
     team: mode === 'team' ? (i % 2) : i, // team 0/1 for 2v2; ffa unique
-    skipNextTurn: false
+    skipNextTurn: false,
+    debtorNr: null,
+    scentMarkedThisRound: false
   }));
 
   if (mode === 'team' && state.players.length === 4) {
@@ -179,6 +181,10 @@ function remapActorNr(state, oldNr, newNr) {
   state.turnOrder = (state.turnOrder || []).map(swap);
   if (state.handDiscardQueue) state.handDiscardQueue = state.handDiscardQueue.map(swap);
   if (state.rattlesnakeQueue) state.rattlesnakeQueue = state.rattlesnakeQueue.map(swap);
+
+  state.players.forEach((pl) => {
+    if (Number(pl.debtorNr) === from) pl.debtorNr = to;
+  });
 
   if (state.effects) {
     if (Array.isArray(state.effects.linkedPairs)) {
@@ -356,6 +362,11 @@ function startRound(state) {
       p.skipNextTurn = false;
       logState(state, `${p.name} 的捆绑随本轮结束而解除。`);
     }
+    if (p.debtorNr != null) {
+      logState(state, `${p.name}（追香）：债务人标记随本轮结束而消失。`);
+    }
+    p.debtorNr = null;
+    p.scentMarkedThisRound = false;
   });
   alive.forEach((p) => {
     let n = 2;
@@ -614,7 +625,30 @@ function flattenLinked(state) {
   return [...new Set(state.effects.linkedPairs.flat().map((nr) => Number(nr)))];
 }
 
-function applyDamage(state, target, amount, sourceMsg) {
+/** 追香：可否把 shooter 记为债务人（不要求 shooter 仍存活） */
+function canMarkScentDebtor(state, scent, shooter) {
+  if (!scent || !shooter) return false;
+  if (scent.role !== 'zhui_xiang') return false;
+  if (Number(scent.actorNr) === Number(shooter.actorNr)) return false;
+  if (state.mode === 'team') return Number(scent.team) !== Number(shooter.team);
+  return true;
+}
+
+/** 开枪造成扣血后，尝试给受伤的追香标记债务人 */
+function tryMarkScentDebt(state, shooterNr, victims) {
+  const shooter = getPlayer(state, shooterNr);
+  if (!shooter || !victims || !victims.length) return;
+  victims.forEach((v) => {
+    if (!v || v.role !== 'zhui_xiang') return;
+    if (v.scentMarkedThisRound) return;
+    if (!canMarkScentDebtor(state, v, shooter)) return;
+    v.debtorNr = Number(shooter.actorNr);
+    v.scentMarkedThisRound = true;
+    logState(state, `${v.name}（追香）：${shooter.name} 成为债务人。`);
+  });
+}
+
+function applyDamage(state, target, amount, sourceMsg, ctx) {
   if (!target.alive || amount <= 0) return;
   const pairIdx = findLinkPairIndex(state, target.actorNr);
   const pair = pairIdx >= 0 ? state.effects.linkedPairs[pairIdx].slice() : null;
@@ -638,6 +672,9 @@ function applyDamage(state, target, amount, sourceMsg) {
   if (pairIdx >= 0) {
     removeLinkPairAt(state, pairIdx);
     logState(state, victims.length > 1 ? '连锁已触发并解除。' : '连锁因受到伤害而解除。');
+  }
+  if (ctx && ctx.shotBy != null) {
+    tryMarkScentDebt(state, ctx.shotBy, victims);
   }
   checkWin(state);
 }
@@ -701,12 +738,28 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
 
   let dmg = 1;
   let shotgunUsed = false;
+  let scentDebtBonus = false;
+  let scentDebtClear = false;
   if (resolved === BULLET.LIVE && state.effects.shotgunNext) {
     dmg = 2;
     shotgunUsed = true;
     state.effects.shotgunNext = false;
   } else if (resolved !== BULLET.LIVE) {
     state.effects.shotgunNext = false;
+  }
+
+  // 追香讨债：仅实弹打债务人；有霰弹则不追加但仍清标记
+  if (
+    resolved === BULLET.LIVE &&
+    shooter.role === 'zhui_xiang' &&
+    shooter.debtorNr != null &&
+    Number(shooter.debtorNr) === Number(target.actorNr)
+  ) {
+    scentDebtClear = true;
+    if (!shotgunUsed) {
+      dmg += 1;
+      scentDebtBonus = true;
+    }
   }
 
   let owlTarget = nightOwlTargetNr != null ? Number(nightOwlTargetNr) : null;
@@ -738,6 +791,8 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
       resolved,
       dmg,
       shotgunUsed,
+      scentDebtBonus,
+      scentDebtClear,
       nightOwlTargetNr: owlTarget || null,
       magazineLeft: state.magazine.length
     },
@@ -770,6 +825,13 @@ function continueAfterShotReveal(state) {
   if (pending.shotgunUsed) {
     logState(state, '霰弹枪生效：伤害 2 点。');
   }
+  if (pending.scentDebtClear) {
+    if (pending.scentDebtBonus) {
+      logState(state, '追香：讨债生效，实弹伤害 +1。');
+    } else if (pending.shotgunUsed) {
+      logState(state, '追香：本发已触发霰弹，讨债不加伤，标记清除。');
+    }
+  }
 
   let extraTurn = false;
 
@@ -779,7 +841,7 @@ function continueAfterShotReveal(state) {
       heal(state, target, 1);
       logState(state, '特殊弹命中银刺：不扣血，反而回 1 血。');
     } else {
-      applyDamage(state, target, 1, '特殊弹：');
+      applyDamage(state, target, 1, '特殊弹：', { shotBy: shooter.actorNr });
       if (silver) {
         drawItems(state, silver, 1);
         logState(state, `银刺抽取一张道具。`);
@@ -820,9 +882,23 @@ function continueAfterShotReveal(state) {
       });
       // 任意被扣血者所在连锁一律解除
       victims.forEach((v) => breakLinkAfterAnyDamage(state, v.actorNr));
+      tryMarkScentDebt(state, shooter.actorNr, victims);
       checkWin(state);
+    } else if (pending.scentDebtBonus) {
+      // 基础 1 点走连锁；讨债 +1 只打债务人本人
+      applyDamage(state, target, 1, '', { shotBy: shooter.actorNr });
+      if (target.alive) {
+        target.hp -= 1;
+        logState(state, `追香讨债追加：${target.name} 再受到 1 点伤害（剩余 ${Math.max(target.hp, 0)}）。`);
+        if (target.hp <= 0) {
+          target.hp = 0;
+          target.alive = false;
+          logState(state, `${target.name} 出局！`);
+        }
+        checkWin(state);
+      }
     } else {
-      applyDamage(state, target, dmg, '');
+      applyDamage(state, target, dmg, '', { shotBy: shooter.actorNr });
     }
   } else if (resolved === BULLET.BLANK) {
     if (toSelf) {
@@ -832,6 +908,10 @@ function continueAfterShotReveal(state) {
         logState(state, '亡命徒：对自己打出空弹，抽一张道具。');
       }
     }
+  }
+
+  if (pending.scentDebtClear && shooter) {
+    shooter.debtorNr = null;
   }
 
   if (state.phase === 'ended') return { ok: true };
@@ -1471,6 +1551,7 @@ function publicView(state, viewerActorNr) {
       alive: p.alive,
       team: p.team,
       skipNextTurn: p.skipNextTurn,
+      debtorNr: p.debtorNr != null ? Number(p.debtorNr) : null,
       handCount: p.hand.length,
       hand: Number(p.actorNr) === Number(viewerActorNr) ? p.hand.slice() : null
     })),
@@ -1478,7 +1559,8 @@ function publicView(state, viewerActorNr) {
       ? {
           hand: viewer.hand.slice(),
           lastPeek: viewer.lastPeek || null,
-          gunpowderBottom: gunpowderBottomFor(state, viewer)
+          gunpowderBottom: gunpowderBottomFor(state, viewer),
+          debtorNr: viewer.debtorNr != null ? Number(viewer.debtorNr) : null
         }
       : null,
     lastItemForSnake: state.lastItemForSnake

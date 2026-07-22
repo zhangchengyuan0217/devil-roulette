@@ -2587,6 +2587,12 @@
       } else if (view.effects.linked && view.effects.linked.length) {
         pills.push(`<span class="pill">连锁 ${view.effects.linked.join(',')}</span>`);
       }
+      (view.players || []).forEach((p) => {
+        if (p.role !== 'zhui_xiang' || p.debtorNr == null) return;
+        const debt = (view.players || []).find((x) => Number(x.actorNr) === Number(p.debtorNr));
+        const debtName = debt ? debt.name : `#${p.debtorNr}`;
+        pills.push(`<span class="pill">追香债 · ${p.name}→${debtName}</span>`);
+      });
       document.getElementById('effectPills').innerHTML = pills.join('');
 
       const me = view.players.find((p) => Number(p.actorNr) === Number(myActorNr));

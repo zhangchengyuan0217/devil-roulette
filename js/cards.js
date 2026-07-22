@@ -40,6 +40,11 @@ const ROLES = {
     id: 'rattlesnake', name: '响尾蛇', glyph: '蛇', hue: 145,
     art: 'assets/roles/rattlesnake.jpg',
     tag: '复制', desc: '当有一位玩家使用道具时，你可以消耗一点血量将该道具卡复制到自己手中。（一轮限一次）'
+  },
+  zhui_xiang: {
+    id: 'zhui_xiang', name: '追香', glyph: '香', hue: 310,
+    art: null,
+    tag: '讨债', desc: '此轮内对手开枪打伤你时记为债务人（一轮限一次）。同轮内你对其打出的实弹伤害 +1 后清除；过轮作废。不可与霰弹枪追加。'
   }
 };
 
