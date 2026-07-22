@@ -1687,6 +1687,65 @@ button.primary {
   z-index: 5;
 }
 
+/* 追香 · 债务人标记（讨债目标角色卡角标） */
+.debt-mark {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 190, 170, 0.45), transparent 55%),
+    linear-gradient(160deg, #d45a4e, var(--blood, #b83a32) 55%, #7a241e);
+  border: 1.5px solid rgba(255, 220, 190, 0.65);
+  box-shadow:
+    0 0 0 1px rgba(40, 12, 8, 0.85),
+    0 4px 12px rgba(184, 58, 50, 0.55);
+  pointer-events: none;
+  animation: debtMarkIn 0.35s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.debt-mark img {
+  width: 15px;
+  height: 15px;
+  display: block;
+  /* 原 SVG 偏蓝灰，压成浅金白以贴血红底 */
+  filter: brightness(0) invert(1) sepia(0.35) saturate(2.2) hue-rotate(350deg);
+}
+
+.role-card.has-debt {
+  box-shadow:
+    0 0 0 1px #1a1208,
+    0 0 0 2px rgba(184, 58, 50, 0.55),
+    0 8px 18px rgba(0, 0, 0, 0.5),
+    0 0 16px rgba(184, 58, 50, 0.28),
+    inset 0 1px 0 rgba(255, 236, 190, 0.12);
+}
+
+@keyframes debtMarkIn {
+  0% { opacity: 0; transform: scale(0.55); }
+  70% { opacity: 1; transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 960px) {
+  .debt-mark {
+    width: 20px;
+    height: 20px;
+    top: -4px;
+    right: -4px;
+  }
+  .debt-mark img {
+    width: 12px;
+    height: 12px;
+  }
+}
+
 /* —— 道具牌：手牌轻抬 + 独立大图预览（炉石式）；点选上移固定 —— */
 .item-card {
   width: 86px;

@@ -1254,8 +1254,17 @@
         ? `<img class="art-img" src="${role.art}" alt="${role.name}" draggable="false">`
         : `<span class="art-glyph">${role.glyph}</span>`;
       const lowCls = lowHp ? ` low-hp${lowCrit ? ' low-hp-crit' : ''}` : '';
+      const isDebtor = !!(opts && opts.isDebtor) || (
+        view && Array.isArray(view.players) && view.players.some(
+          (x) => x.debtorNr != null && Number(x.debtorNr) === Number(p.actorNr)
+        )
+      );
+      const debtMark = isDebtor
+        ? `<div class="debt-mark" title="债务人" aria-label="债务人"><img src="assets/svgs/mark.svg" alt="" draggable="false"></div>`
+        : '';
       return `
-        <div class="role-card${role.art ? ' has-art' : ''}${lowCls}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${role.name}">
+        <div class="role-card${role.art ? ' has-art' : ''}${lowCls}${isDebtor ? ' has-debt' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${role.name}${isDebtor ? ' · 债务人' : ''}">
+          ${debtMark}
           <div class="art">${art}</div>
           <div class="body">
             ${hpPipsHtml(p.hp)}
