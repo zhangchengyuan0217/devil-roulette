@@ -147,3 +147,24 @@ function roleMeta(roleId) {
 function itemMeta(itemId) {
   return ITEMS[itemId] || { name: '?', glyph: '?', hue: 0, desc: '' };
 }
+
+/** 手牌/预览用缩略图（assets/tools/sm），减轻手机解码压力 */
+function itemArtSm(art) {
+  if (!art || typeof art !== 'string') return art;
+  if (art.indexOf('/tools/') === -1 || art.indexOf('/tools/sm/') !== -1) return art;
+  return art.replace('/tools/', '/tools/sm/');
+}
+
+function preloadItemArts() {
+  Object.keys(ITEMS).forEach((id) => {
+    const art = ITEMS[id] && ITEMS[id].art;
+    if (!art) return;
+    const thumb = itemArtSm(art);
+    [thumb, art].forEach((src) => {
+      if (!src) return;
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = src;
+    });
+  });
+}

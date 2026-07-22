@@ -319,6 +319,8 @@
     let view = null;
     let selectedHand = [];
     let handPreviewHoverIdx = null;
+    /** 手牌内容签名：未变则跳过整扇 innerHTML 重建（避免触屏反复解码 <img>） */
+    let lastRenderedHandSig = '';
     /** 二次点击取消选中后，抑制预览直到鼠标离开该牌（避免 render 重建触发 mouseenter） */
     let handPreviewSuppressUntilLeave = false;
     let skillTipActorNr = null;
@@ -1790,7 +1792,8 @@
 
     function fxCardHtml(art, name) {
       if (art) {
-        return `<div class="fx-used-card"><img src="${art}" alt="${name || ''}"><span class="fx-used-name">${name || ''}</span></div>`;
+        const src = itemArtSm(art) || art;
+        return `<div class="fx-used-card"><img src="${src}" alt="${name || ''}" decoding="async" width="160" height="236" draggable="false"><span class="fx-used-name">${name || ''}</span></div>`;
       }
       return `<div class="fx-used-card fallback"><span class="fx-used-name">${name || '道具'}</span></div>`;
     }
@@ -1798,7 +1801,8 @@
     function fxMiniCardHtml(itemId) {
       const it = itemMeta(itemId);
       if (it.art) {
-        return `<div class="fx-mini-card"><img src="${it.art}" alt="${it.name}"></div>`;
+        const src = itemArtSm(it.art) || it.art;
+        return `<div class="fx-mini-card"><img src="${src}" alt="${it.name}" decoding="async" width="72" height="106" draggable="false"></div>`;
       }
       return `<div class="fx-mini-card fallback"><span>${it.name || '道具'}</span></div>`;
     }
@@ -1968,6 +1972,12 @@
       stage.innerHTML = stageHtml;
       requestAnimationFrame(() => overlay.classList.add('play'));
 
+      // 触屏/平板：缩短全屏公示，减轻解码与合成压力（服务端 item_fx 超时仍兜底）
+      const coarseUi = window.matchMedia('(pointer: coarse)').matches
+        || window.matchMedia('(hover: none)').matches;
+      const landMs = coarseUi ? 720 : 1300;
+      const settleMs = coarseUi ? 820 : 1400;
+
       itemFxTimer = setTimeout(() => {
         overlay.classList.add('landed');
         result.textContent = resultText;
@@ -1981,8 +1991,8 @@
           itemFxTimer = null;
           finishItemFx();
           maybeShowWinCeremony();
-        }, 1400);
-      }, 1300);
+        }, settleMs);
+      }, landMs);
     }
 
     function finishFirstPlayerSpin() {
@@ -2483,9 +2493,16 @@
 
       const it = itemMeta(myHand[idx]);
       if (it.art) {
+        const src = itemArtSm(it.art) || it.art;
         face.className = 'hand-preview-face has-art';
         face.style.removeProperty('--hue');
-        face.innerHTML = `<img class="art-img" src="${it.art}" alt="${it.name}" draggable="false">`;
+        let img = face.querySelector('img.art-img');
+        if (!img || face.querySelector('.art-glyph')) {
+          face.innerHTML = `<img class="art-img" src="${src}" alt="${it.name}" decoding="async" width="200" height="280" draggable="false">`;
+        } else if (img.getAttribute('src') !== src) {
+          img.src = src;
+          img.alt = it.name || '';
+        }
       } else {
         face.className = 'hand-preview-face';
         face.style.setProperty('--hue', String(it.hue || 40));
@@ -2825,65 +2842,66 @@
       if (handPreviewHoverIdx != null && (handPreviewHoverIdx < 0 || handPreviewHoverIdx >= myHand.length)) {
         handPreviewHoverIdx = null;
       }
-      const fanMid = (myHand.length - 1) / 2;
-      handEl.innerHTML = myHand.map((id, i) => {
-        const it = itemMeta(id);
-        const selected = selectedHand.includes(i);
-        const fan = myHand.length > 1 ? (i - fanMid).toFixed(2) : '0';
-        const cardInner = it.art
-          ? `<div class="item-card has-art ${selected ? 'selected' : ''}" style="--fan:${fan}" title="${it.name}">
-            <img class="art-img" src="${it.art}" alt="${it.name}" draggable="false">
+      const handSig = `${maxHandSelect}|${myHand.join('\0')}`;
+      const handNeedsRebuild = handSig !== lastRenderedHandSig || !handEl.querySelector('.hand-slot, .meta');
+      if (handNeedsRebuild) {
+        lastRenderedHandSig = handSig;
+        const fanMid = (myHand.length - 1) / 2;
+        handEl.innerHTML = myHand.map((id, i) => {
+          const it = itemMeta(id);
+          const selected = selectedHand.includes(i);
+          const fan = myHand.length > 1 ? (i - fanMid).toFixed(2) : '0';
+          const artSrc = it.art ? (itemArtSm(it.art) || it.art) : '';
+          const cardInner = artSrc
+            ? `<div class="item-card has-art ${selected ? 'selected' : ''}" style="--fan:${fan}" title="${it.name}">
+            <img class="art-img" src="${artSrc}" alt="${it.name}" decoding="async" width="86" height="120" draggable="false">
           </div>`
-          : `<div class="item-card ${selected ? 'selected' : ''}" style="--hue:${it.hue};--fan:${fan}" title="${it.name}">
+            : `<div class="item-card ${selected ? 'selected' : ''}" style="--hue:${it.hue};--fan:${fan}" title="${it.name}">
             <span class="art-glyph">${it.glyph}</span>
             <span class="fallback-name">${it.name}</span>
           </div>`;
-        return `<div class="hand-slot ${selected ? 'is-selected' : ''}" data-i="${i}" title="${it.name}">${cardInner}</div>`;
-      }).join('') || '<span class="meta">手牌为空</span>';
+          return `<div class="hand-slot ${selected ? 'is-selected' : ''}" data-i="${i}" title="${it.name}">${cardInner}</div>`;
+        }).join('') || '<span class="meta">手牌为空</span>';
 
-      handEl.querySelectorAll('.hand-slot').forEach((el) => {
-        el.onmouseenter = () => {
-          if (handPreviewSuppressUntilLeave) return;
-          handPreviewHoverIdx = Number(el.dataset.i);
-          syncHandPreview(myHand, el);
-        };
-        el.onmouseleave = () => {
-          handPreviewHoverIdx = null;
-          handPreviewSuppressUntilLeave = false;
-          const sel = selectedHand.length ? handEl.querySelector(`.hand-slot[data-i="${selectedHand[selectedHand.length - 1]}"]`) : null;
-          syncHandPreview(myHand, sel);
-        };
-        el.onclick = () => {
-          const i = Number(el.dataset.i);
-          const pos = selectedHand.indexOf(i);
-          if (pos >= 0) {
-            selectedHand = selectedHand.filter((x) => x !== i);
-            // 取消选中：立刻收起大图（即使鼠标还在牌上）
-            handPreviewSuppressUntilLeave = true;
+        handEl.querySelectorAll('.hand-slot').forEach((el) => {
+          el.onmouseenter = () => {
+            if (handPreviewSuppressUntilLeave) return;
+            handPreviewHoverIdx = Number(el.dataset.i);
+            syncHandPreview((view && view.me && view.me.hand) || [], el);
+          };
+          el.onmouseleave = () => {
             handPreviewHoverIdx = null;
-          } else if (maxHandSelect === 1) {
-            selectedHand = [i];
             handPreviewSuppressUntilLeave = false;
-          } else if (selectedHand.length < maxHandSelect) {
-            selectedHand = selectedHand.concat(i);
-            handPreviewSuppressUntilLeave = false;
-          } else {
-            selectedHand = selectedHand.slice(1).concat(i);
-            handPreviewSuppressUntilLeave = false;
-          }
-          // 只改选中态，勿整页 render（触屏上重建 <img> 会闪）
-          syncHandSelectionUi();
-        };
-      });
-      {
-        const hoverEl = (!handPreviewSuppressUntilLeave && handPreviewHoverIdx != null)
-          ? handEl.querySelector(`.hand-slot[data-i="${handPreviewHoverIdx}"]`)
-          : null;
-        const selEl = (!handPreviewSuppressUntilLeave && selectedHand.length)
-          ? handEl.querySelector(`.hand-slot[data-i="${selectedHand[selectedHand.length - 1]}"]`)
-          : null;
-        syncHandPreview(myHand, hoverEl || selEl);
+            const hand = (view && view.me && view.me.hand) || [];
+            const sel = selectedHand.length ? handEl.querySelector(`.hand-slot[data-i="${selectedHand[selectedHand.length - 1]}"]`) : null;
+            syncHandPreview(hand, sel);
+          };
+          el.onclick = () => {
+            const i = Number(el.dataset.i);
+            const limit = (view && view.players && view.players.find((p) => Number(p.actorNr) === Number(myActorNr)) || {}).role === 'iron_rose' ? 2 : 1;
+            const pos = selectedHand.indexOf(i);
+            if (pos >= 0) {
+              selectedHand = selectedHand.filter((x) => x !== i);
+              // 取消选中：立刻收起大图（即使鼠标还在牌上）
+              handPreviewSuppressUntilLeave = true;
+              handPreviewHoverIdx = null;
+            } else if (limit === 1) {
+              selectedHand = [i];
+              handPreviewSuppressUntilLeave = false;
+            } else if (selectedHand.length < limit) {
+              selectedHand = selectedHand.concat(i);
+              handPreviewSuppressUntilLeave = false;
+            } else {
+              selectedHand = selectedHand.slice(1).concat(i);
+              handPreviewSuppressUntilLeave = false;
+            }
+            // 只改选中态，勿整页 render（触屏上重建 <img> 会闪）
+            syncHandSelectionUi();
+          };
+        });
       }
+      // 手牌未变也要刷新选中态 / 预览 / 按钮（回合切换等）
+      syncHandSelectionUi();
 
       const peeks = [];
       if (view.me && view.me.lastPeek) {
@@ -3708,8 +3726,9 @@
         `手牌 ${hand.length} 张，请弃置 ${awaiting.need} 张至上限 8 张（剩余 ${awaitingLeftSec(awaiting) ?? awaiting.seconds ?? 30}s）`;
       document.getElementById('discardHandRow').innerHTML = hand.map((id, i) => {
         const it = itemMeta(id);
-        return it.art
-          ? `<button type="button" class="discard-hand-card" data-index="${i}"><img src="${it.art}" alt="${it.name}"><span class="dh-name">${it.name}</span></button>`
+        const src = it.art ? (itemArtSm(it.art) || it.art) : '';
+        return src
+          ? `<button type="button" class="discard-hand-card" data-index="${i}"><img src="${src}" alt="${it.name}" decoding="async" width="86" height="120" draggable="false"><span class="dh-name">${it.name}</span></button>`
           : `<button type="button" class="discard-hand-card fallback" data-index="${i}">${it.glyph}<span class="dh-name">${it.name}</span></button>`;
       }).join('');
       document.querySelectorAll('#discardHandRow .discard-hand-card').forEach((btn) => {
@@ -3888,6 +3907,7 @@
     if (savedName) document.getElementById('playerName').value = savedName;
     preferredRoom = DEFAULT_ROOM;
     setJoinControlsEnabled(false);
+    if (typeof preloadItemArts === 'function') preloadItemArts();
     createClient(false);
   </script>
 </body>

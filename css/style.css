@@ -940,6 +940,8 @@ button.primary {
   margin: 0 0 0 -22px;
   z-index: 1;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .hand-slot:first-child {
@@ -3046,6 +3048,18 @@ button.primary {
 @keyframes fxPulseHit {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.03); }
+}
+
+/* 触屏/省电：去掉座位 filter 脉冲，减合成开销 */
+@media (pointer: coarse), (hover: none), (prefers-reduced-motion: reduce) {
+  .hero-seat.fx-caster .role-card,
+  .hero-seat.fx-hit .role-card {
+    animation: none;
+  }
+
+  .item-card {
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
 }
 
 .fx-icon {
