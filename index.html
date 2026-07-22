@@ -2148,7 +2148,7 @@
       panel.classList.toggle('layout-classic', !fourPlayer && !duel && !trio);
 
       document.getElementById('roundInfo').innerHTML =
-        `<strong>第 ${view.round} 轮</strong> · 弹药剩余 ${view.magazineCount}` +
+        `<strong>第 ${view.round} 轮</strong>` +
         (fourPlayer
           ? (view.mode === 'team'
             ? ' · 上下队友 · <span style="color:#ff8f88">红队</span> vs <span style="color:#8eb6ff">蓝队</span>'
@@ -2166,15 +2166,13 @@
               : ' · 结束')
           : ` · 当前行动 <span class="seat-nr">#${curNr}</span>`);
 
-      // 中央弹药信息：已射出 / 本轮装弹
-      const loadout = view.loadout || { live: 0, blank: 0, special: 0 };
-      const fired = view.fired || { live: 0, blank: 0, special: 0 };
-      const showSpecial = view.players.some((p) => p.alive && p.role === 'silver_spike');
+      // 中央弹药：牌桌转轮内剩余（实/空/特殊）
+      const table = view.tableBullets || { live: 0, blank: 0, special: 0 };
       document.getElementById('loadoutRow').innerHTML = `
-        <span class="ammo-legend">子弹数</span>
-        <span class="ammo-chip live"><i></i>实弹 ${fired.live}/${loadout.live}</span>
-        <span class="ammo-chip blank"><i></i>空弹 ${fired.blank}/${loadout.blank}</span>
-        ${showSpecial ? `<span class="ammo-chip special"><i></i>特殊 ${fired.special}/${loadout.special}</span>` : ''}
+        <span class="ammo-legend">牌桌剩余</span>
+        <span class="ammo-chip live"><i></i>实弹 ${table.live}</span>
+        <span class="ammo-chip blank"><i></i>空弹 ${table.blank}</span>
+        <span class="ammo-chip special"><i></i>特殊 ${table.special}</span>
       `;
 
       const cyl = document.getElementById('cylinder');

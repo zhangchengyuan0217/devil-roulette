@@ -1365,6 +1365,16 @@ function viewAwaiting(state, viewerActorNr) {
   return copy;
 }
 
+function countTableBullets(magazine) {
+  const c = { live: 0, blank: 0, special: 0 };
+  for (const b of magazine) {
+    if (b === BULLET.LIVE) c.live += 1;
+    else if (b === BULLET.BLANK) c.blank += 1;
+    else if (b === BULLET.SPECIAL) c.special += 1;
+  }
+  return c;
+}
+
 function publicView(state, viewerActorNr) {
   const viewer = getPlayer(state, viewerActorNr);
   return {
@@ -1374,8 +1384,7 @@ function publicView(state, viewerActorNr) {
     currentTurn: state.currentTurn,
     turnOrder: state.turnOrder,
     magazineCount: state.magazine.length,
-    loadout: state.loadout || { live: 0, blank: 0, special: 0 },
-    fired: state.fired || { live: 0, blank: 0, special: 0 },
+    tableBullets: countTableBullets(state.magazine),
     effects: {
       reverseNext: state.effects.reverseNext,
       shotgunNext: state.effects.shotgunNext,
