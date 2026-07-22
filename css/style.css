@@ -3538,6 +3538,25 @@ button.primary {
 
 .reveal-card {
   animation: dealIn 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.reveal-player-name {
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.reveal-role-name {
+  margin-top: 10px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--gold);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
 }
 
 @keyframes dealIn {

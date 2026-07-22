@@ -1333,9 +1333,10 @@
 
       const row = document.getElementById('revealRow');
       row.innerHTML = view.players.map((p, i) => {
+        const roleName = p.roleName || roleMeta(p.role).name || '';
         return `
           <div class="reveal-card" style="animation-delay:${i * 0.12}s">
-            <div class="seat-name" style="text-align:center;margin-bottom:6px">${p.name}</div>
+            <div class="seat-name reveal-player-name">${p.name}</div>
             <div class="flip-scene">
               <div class="flip-inner" id="flip-${p.actorNr}">
                 <div class="flip-face">
@@ -1346,6 +1347,7 @@
                 </div>
               </div>
             </div>
+            <div class="reveal-role-name">${roleName}</div>
           </div>`;
       }).join('');
 
