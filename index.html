@@ -1264,9 +1264,16 @@
       const debtMark = isDebtor
         ? `<div class="debt-mark" title="债务人" aria-label="债务人"><img src="assets/svgs/mark.svg" alt="" draggable="false"></div>`
         : '';
+      const isBound = !!(p.skipNextTurn);
+      const bindMark = isBound
+        ? `<div class="bind-mark" title="已被捆绑" aria-label="已被捆绑"><img src="assets/svgs/bind.svg" alt="" draggable="false"></div>`
+        : '';
+      const titleBits = [role.name];
+      if (isDebtor) titleBits.push('债务人');
+      if (isBound) titleBits.push('已被捆绑');
       return `
-        <div class="role-card${role.art ? ' has-art' : ''}${lowCls}${isDebtor ? ' has-debt' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${role.name}${isDebtor ? ' · 债务人' : ''}">
-          ${debtMark}
+        <div class="role-card${role.art ? ' has-art' : ''}${lowCls}${isDebtor ? ' has-debt' : ''}${isBound ? ' has-bind' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${titleBits.join(' · ')}">
+          ${debtMark}${bindMark}
           <div class="art">${art}</div>
           <div class="body">
             ${hpPipsHtml(p.hp)}

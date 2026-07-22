@@ -1691,7 +1691,7 @@ button.primary {
 .debt-mark {
   position: absolute;
   top: -6px;
-  right: -6px;
+  left: -6px;
   z-index: 6;
   width: 26px;
   height: 26px;
@@ -1727,6 +1727,37 @@ button.primary {
     inset 0 1px 0 rgba(255, 236, 190, 0.12);
 }
 
+/* 捆绑成功：角色卡右上角锁扣角标 */
+.bind-mark {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 6;
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+  animation: debtMarkIn 0.35s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.bind-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* 原 SVG 灰锁 → 锈铁棕角 + 浅琥珀锁扣感 */
+  filter:
+    brightness(0.92)
+    sepia(0.55)
+    saturate(2.4)
+    hue-rotate(-18deg)
+    contrast(1.08);
+}
+
+.role-card.has-bind.has-debt .debt-mark {
+  right: auto;
+  left: -6px;
+}
+
 @keyframes debtMarkIn {
   0% { opacity: 0; transform: scale(0.55); }
   70% { opacity: 1; transform: scale(1.12); }
@@ -1738,11 +1769,15 @@ button.primary {
     width: 20px;
     height: 20px;
     top: -4px;
-    right: -4px;
+    left: -4px;
   }
   .debt-mark img {
     width: 12px;
     height: 12px;
+  }
+  .bind-mark {
+    width: 28px;
+    height: 28px;
   }
 }
 
@@ -4375,6 +4410,11 @@ button.primary {
   .debt-mark img {
     width: 17px;
     height: 17px;
+  }
+
+  .bind-mark {
+    width: 42px;
+    height: 42px;
   }
 
   .reveal-card .role-card {
