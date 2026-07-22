@@ -24,6 +24,7 @@
           <div id="log"></div>
         </div>
       </details>
+      <button id="refreshAppBtn" type="button" title="强制拉取最新页面与资源">更新</button>
       <button id="reconnectBtn" type="button">重连</button>
       <button id="disbandBtn" type="button" style="display:none">解散房间</button>
       <span class="meta" id="roomInfo"></span>
@@ -3936,6 +3937,20 @@
     document.getElementById('reconnectBtn').onclick = () => {
       // 重连只恢复服务器连接；仍需手动点「加入房间」（会尝试 rejoin 原座位）
       reconnectClient(true);
+    };
+
+    document.getElementById('refreshAppBtn').onclick = () => {
+      // 绕过缓存拉取最新 HTML/CSS/JS（解决部分玩家仍停在旧界面）
+      const go = () => {
+        const u = new URL(location.href);
+        u.searchParams.set('_v', String(Date.now()));
+        location.replace(u.href);
+      };
+      if ('caches' in window) {
+        caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).catch(() => {}).finally(go);
+      } else {
+        go();
+      }
     };
 
     // 预填用户名；房间号固定默认，不自动进房
