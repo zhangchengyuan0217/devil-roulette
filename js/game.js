@@ -296,6 +296,13 @@ function startRound(state) {
   state.awaiting = null;
 
   const alive = alivePlayers(state);
+  // 捆绑只作用于「本轮内的下一回合」；弹药打空重装后清掉，避免跨轮仍被跳过
+  state.players.forEach((p) => {
+    if (p.skipNextTurn) {
+      p.skipNextTurn = false;
+      logState(state, `${p.name} 的捆绑随本轮结束而解除。`);
+    }
+  });
   alive.forEach((p) => {
     let n = 2;
     const bonus = state.effects.doubleItemBonus[p.actorNr] || 0;
