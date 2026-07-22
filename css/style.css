@@ -654,10 +654,6 @@ button.primary {
     border-width: 8px;
     padding: clamp(10px, 1.8vh, 20px) clamp(10px, 1.6vw, 18px);
   }
-
-  .board-arena .hero-seat:hover .role-card {
-    transform: scale(1.18);
-  }
 }
 
 .cylinder {
@@ -928,11 +924,6 @@ button.primary {
 
 .hand-slot:first-child {
   margin-left: 0;
-}
-
-.hand-slot:hover,
-.hand-slot:focus-within {
-  z-index: 80;
 }
 
 .hand-slot.is-selected {
@@ -1227,31 +1218,10 @@ button.primary {
   z-index: 2;
 }
 
-.hero-seat:hover {
-  z-index: 90;
-}
-
 .hero-seat .role-card {
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   /* 向上放大，避免盖住下方「开枪」 */
   transform-origin: center bottom;
-}
-
-.hero-seat:hover .role-card {
-  transform: scale(1.28);
-  z-index: 15;
-  border-color: transparent;
-  box-shadow:
-    0 0 0 1px #1a1208,
-    0 12px 28px rgba(0, 0, 0, 0.55),
-    0 0 0 2px rgba(212, 168, 87, 0.55),
-    0 0 22px rgba(212, 168, 87, 0.22),
-    inset 0 1px 0 rgba(255, 236, 190, 0.16);
-  animation: none;
-}
-
-.me-zone .hero-seat:hover .role-card {
-  transform: scale(1.2);
 }
 
 .hero-seat.selected .role-card {
@@ -1264,22 +1234,65 @@ button.primary {
     inset 0 1px 0 rgba(255, 236, 190, 0.16);
 }
 
-.hero-seat.selected:hover .role-card {
-  transform: scale(1.3);
-  box-shadow:
-    0 0 0 1px #1a1208,
-    0 0 0 3px var(--gold),
-    0 14px 30px rgba(0, 0, 0, 0.6),
-    0 0 22px rgba(212, 168, 87, 0.3),
-    inset 0 1px 0 rgba(255, 236, 190, 0.16);
-}
-
 .hero-seat.turn .role-card {
   animation: turnPulse 1.6s ease-in-out infinite;
 }
 
-.hero-seat.turn:hover .role-card {
-  animation: none;
+/* 仅鼠标等精确指针：悬停放大。触屏勿用 :hover，否则会 sticky 闪一下像刷新 */
+@media (hover: hover) and (pointer: fine) {
+  .hero-seat:hover {
+    z-index: 90;
+  }
+
+  .hero-seat:hover .role-card {
+    transform: scale(1.28);
+    z-index: 15;
+    border-color: transparent;
+    box-shadow:
+      0 0 0 1px #1a1208,
+      0 12px 28px rgba(0, 0, 0, 0.55),
+      0 0 0 2px rgba(212, 168, 87, 0.55),
+      0 0 22px rgba(212, 168, 87, 0.22),
+      inset 0 1px 0 rgba(255, 236, 190, 0.16);
+    animation: none;
+  }
+
+  .me-zone .hero-seat:hover .role-card {
+    transform: scale(1.2);
+  }
+
+  .me-zone .hero-seat:hover {
+    z-index: 25;
+  }
+
+  .hero-seat.selected:hover .role-card {
+    transform: scale(1.3);
+    box-shadow:
+      0 0 0 1px #1a1208,
+      0 0 0 3px var(--gold),
+      0 14px 30px rgba(0, 0, 0, 0.6),
+      0 0 22px rgba(212, 168, 87, 0.3),
+      inset 0 1px 0 rgba(255, 236, 190, 0.16);
+  }
+
+  .hero-seat.turn:hover .role-card {
+    animation: none;
+  }
+
+  .board-arena .seat-slot:hover {
+    z-index: 25;
+  }
+
+  .hand-slot:hover,
+  .hand-slot:focus-within {
+    z-index: 80;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (max-width: 1100px) and (min-width: 721px) {
+  .board-arena .hero-seat:hover .role-card {
+    transform: scale(1.18);
+  }
 }
 
 .hero-seat.dead {
@@ -1456,10 +1469,6 @@ button.primary {
   gap: 2px;
 }
 
-.me-zone .hero-seat:hover {
-  z-index: 25;
-}
-
 /* 桌面座位 */
 .board-arena .role-card {
   width: 100px;
@@ -1485,10 +1494,6 @@ button.primary {
 .board-arena .seat-slot::before {
   font-size: 0.64rem;
   margin-bottom: 2px;
-}
-
-.board-arena .seat-slot:hover {
-  z-index: 25;
 }
 
 .role-card .frame {

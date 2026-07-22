@@ -2265,6 +2265,44 @@
       preview.classList.add('is-visible');
     }
 
+    function syncSeatSelectionUi() {
+      document.querySelectorAll('.hero-seat[data-actor]').forEach((el) => {
+        const nr = Number(el.dataset.actor);
+        el.classList.toggle('selected', nr !== Number(myActorNr) && Number(selectedTarget) === nr);
+      });
+    }
+
+    function syncHandSelectionUi() {
+      const handEl = document.getElementById('hand');
+      if (!handEl) return;
+      const myHand = (view && view.me && view.me.hand) || [];
+      handEl.querySelectorAll('.hand-slot').forEach((el) => {
+        const i = Number(el.dataset.i);
+        const selected = selectedHand.includes(i);
+        el.classList.toggle('is-selected', selected);
+        const card = el.querySelector('.item-card');
+        if (card) card.classList.toggle('selected', selected);
+      });
+
+      const me = view && view.players && view.players.find((p) => Number(p.actorNr) === Number(myActorNr));
+      const curNr = view && view.turnOrder ? Number(view.turnOrder[view.currentTurn]) : 0;
+      const myTurn = !!(view && view.phase === 'playing' && !view.awaiting && curNr === Number(myActorNr));
+      document.getElementById('useItemBtn').disabled = !myTurn || selectedHand.length !== 1;
+      const ironRoseBtn = document.getElementById('ironRoseBtn');
+      if (ironRoseBtn) {
+        const isIronRose = me && me.role === 'iron_rose';
+        ironRoseBtn.disabled = !(myTurn && isIronRose && selectedHand.length === 2);
+      }
+
+      const hoverEl = (!handPreviewSuppressUntilLeave && handPreviewHoverIdx != null)
+        ? handEl.querySelector(`.hand-slot[data-i="${handPreviewHoverIdx}"]`)
+        : null;
+      const selEl = (!handPreviewSuppressUntilLeave && selectedHand.length)
+        ? handEl.querySelector(`.hand-slot[data-i="${selectedHand[selectedHand.length - 1]}"]`)
+        : null;
+      syncHandPreview(myHand, hoverEl || selEl);
+    }
+
     function render() {
       const inRoom = !offlineSim && client && client.isJoinedToRoom();
       document.getElementById('roomInfo').textContent = offlineSim
@@ -2426,7 +2464,8 @@
             toggleSkillTip(el);
             if (nr === myActorNr) return;
             selectedTarget = selectedTarget === nr ? null : nr;
-            render();
+            // 只改选中态，避免触屏上整页重建角色/手牌图闪一下
+            syncSeatSelectionUi();
           };
         });
         root.querySelectorAll('.seat-shoot-btn').forEach((btn) => {
@@ -2574,7 +2613,8 @@
             selectedHand = selectedHand.slice(1).concat(i);
             handPreviewSuppressUntilLeave = false;
           }
-          render();
+          // 只改选中态，勿整页 render（触屏上重建 <img> 会闪）
+          syncHandSelectionUi();
         };
       });
       {
