@@ -1274,7 +1274,7 @@
       return `
         <div class="role-card${role.art ? ' has-art' : ''}${lowCls}${isDebtor ? ' has-debt' : ''}${isBound ? ' has-bind' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${titleBits.join(' · ')}">
           ${debtMark}${bindMark}
-          <div class="art">${art}</div>
+          <div class="art">${art}<span class="role-name">${role.name}</span></div>
           <div class="body">
             ${hpPipsHtml(p.hp)}
             <div class="desc">${role.desc || ''}</div>
