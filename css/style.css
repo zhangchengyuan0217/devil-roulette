@@ -4118,9 +4118,21 @@ button.primary {
     gap: 0;
   }
 
-  .board-arena .hp-drop {
-    width: 5px;
-    height: 5px;
+  /* 迷你卡宽度约 44~52px：收紧血滴间距，避免 6 滴被 body overflow 裁成 4 滴 */
+  .board-arena .role-card .body .hp-pips,
+  .me-zone .role-card .body .hp-pips,
+  .hp-pips {
+    gap: 1px;
+    padding: 1px 2px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .board-arena .hp-drop,
+  .me-zone .hp-drop,
+  .hp-drop {
+    width: 4px;
+    height: 4px;
   }
 
   .board-arena .hand-count {
@@ -4384,11 +4396,6 @@ button.primary {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-  }
-
-  .hp-drop {
-    width: 5px;
-    height: 5px;
   }
 
   .me-zone .hand-count {
