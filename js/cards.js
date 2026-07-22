@@ -9,7 +9,7 @@ const ROLES = {
   gunpowder: {
     id: 'gunpowder', name: '火药', glyph: '火', hue: 18,
     art: 'assets/roles/gunpowder.jpg',
-    tag: '情报', desc: '你的回合内，屏幕底部实时显示弹药牌堆最底部的两张卡牌。'
+    tag: '情报', desc: '你的回合内，牌桌中央实时显示弹药牌堆最底部的两张卡牌。'
   },
   outlaw: {
     id: 'outlaw', name: '亡命徒', glyph: '亡命', hue: 30,

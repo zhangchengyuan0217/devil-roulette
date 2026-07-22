@@ -1086,84 +1086,101 @@ button.primary {
   display: none;
 }
 
-.gunpowder-dock {
-  margin: 4px 0 0;
-  z-index: 5;
+.gunpowder-felt {
   display: flex;
   flex-direction: row;
   align-items: center;
+  justify-content: center;
   gap: 10px;
+  flex-wrap: wrap;
   width: fit-content;
   max-width: 100%;
+  margin: 2px auto 0;
   padding: 6px 12px;
-  border-radius: 10px;
-  background: rgba(18, 12, 8, 0.92);
-  border: 1px solid rgba(212, 168, 87, 0.35);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
+  border-radius: 12px;
+  background: rgba(8, 6, 4, 0.88);
+  border: 1px solid rgba(232, 160, 74, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(90, 40, 12, 0.45),
+    0 6px 16px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 200, 120, 0.12);
+  z-index: 4;
 }
 
-.gunpowder-dock[hidden] {
+.gunpowder-felt[hidden] {
   display: none !important;
 }
 
-.gunpowder-dock-label {
+.gunpowder-felt-label {
   font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  color: rgba(240, 230, 216, 0.72);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #f0c090;
   white-space: nowrap;
 }
 
-.gunpowder-dock-shells {
+.gunpowder-felt-shells {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
-.gunpowder-dock-item {
+.gunpowder-felt-item {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 
-.gunpowder-dock-item .shell {
-  width: 22px;
-  height: 32px;
+.gunpowder-felt-item .shell {
+  width: 24px;
+  height: 34px;
   border-radius: 4px 4px 7px 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.72rem;
   font-weight: 700;
+  border: 1px solid rgba(0, 0, 0, 0.35);
 }
 
-.gunpowder-dock-item .shell.live {
+.gunpowder-felt-item .shell.live {
   background: linear-gradient(180deg, #e07068, #9a2f28);
   color: #fff5f2;
-  border-color: #5a1c18;
 }
 
-.gunpowder-dock-item .shell.blank {
+.gunpowder-felt-item .shell.blank {
   background: linear-gradient(180deg, #ddd0b4, #9a8c72);
   color: #2a2418;
-  border-color: #5a5040;
 }
 
-.gunpowder-dock-item .shell.special {
+.gunpowder-felt-item .shell.special {
   background: linear-gradient(180deg, #e0c078, #5aa8c8);
   color: #1a1410;
-  border-color: #6a5830;
 }
 
-.gunpowder-dock-ord {
-  font-size: 0.62rem;
+.gunpowder-felt-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.gunpowder-felt-ord {
+  font-size: 0.58rem;
   color: rgba(240, 230, 216, 0.55);
 }
 
-.gunpowder-dock-name {
-  font-size: 0.72rem;
+.gunpowder-felt-name {
+  font-size: 0.78rem;
+  font-weight: 700;
   color: var(--gold);
+}
+
+.gunpowder-felt-empty {
+  font-size: 0.72rem;
+  color: rgba(240, 230, 216, 0.65);
 }
 
 .actions-dock {
@@ -4330,8 +4347,44 @@ button.primary {
     margin: 0;
   }
 
-  .gunpowder-dock {
-    display: none;
+  /* 火药情报改挂牌桌中央，横屏不再藏掉 */
+  .gunpowder-felt {
+    gap: 6px;
+    padding: 3px 8px;
+    margin: 0 auto;
+    border-radius: 8px;
+  }
+
+  .gunpowder-felt-label {
+    font-size: 0.5rem;
+    letter-spacing: 0.04em;
+  }
+
+  .gunpowder-felt-shells {
+    gap: 6px;
+  }
+
+  .gunpowder-felt-item {
+    gap: 3px;
+  }
+
+  .gunpowder-felt-item .shell {
+    width: 14px;
+    height: 20px;
+    font-size: 0.52rem;
+    border-radius: 3px 3px 5px 5px;
+  }
+
+  .gunpowder-felt-ord {
+    font-size: 0.42rem;
+  }
+
+  .gunpowder-felt-name {
+    font-size: 0.55rem;
+  }
+
+  .gunpowder-felt-empty {
+    font-size: 0.5rem;
   }
 
   .actions-dock {

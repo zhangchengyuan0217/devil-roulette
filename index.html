@@ -76,6 +76,10 @@
         <div class="loadout-row" id="loadoutRow"></div>
         <div class="cylinder" id="cylinder"></div>
         <div class="felt-status" id="feltStatus">弹药区</div>
+        <div class="gunpowder-felt" id="gunpowderFelt" hidden>
+          <div class="gunpowder-felt-label">火药 · 堆底</div>
+          <div class="gunpowder-felt-shells" id="gunpowderFeltShells"></div>
+        </div>
         <div class="effect-pills" id="effectPills"></div>
       </div>
       <div class="seat-slot seat-right" id="seatRight"></div>
@@ -99,10 +103,6 @@
           <div class="hand-label">我的道具手牌 <span class="hand-hint hand-hint-desktop">悬停预览 · 点选上移 · 每次用 1 张</span><span class="hand-hint hand-hint-touch">点选预览 · 再点取消 · 每次用 1 张</span></div>
           <div class="hand-fan" id="hand"></div>
           <div class="private-toast" id="privateInfo"></div>
-          <div class="gunpowder-dock" id="gunpowderDock" hidden>
-            <div class="gunpowder-dock-label">火药 · 弹药堆底部</div>
-            <div class="gunpowder-dock-shells" id="gunpowderDockShells"></div>
-          </div>
         </div>
       </div>
 
@@ -3793,21 +3793,29 @@
     };
 
     function renderGunpowderDock(v) {
-      const dock = document.getElementById('gunpowderDock');
-      const shellsEl = document.getElementById('gunpowderDockShells');
-      if (!dock || !shellsEl) return;
+      const felt = document.getElementById('gunpowderFelt');
+      const shellsEl = document.getElementById('gunpowderFeltShells');
+      if (!felt || !shellsEl) return;
       const bottom = v && v.me && v.me.gunpowderBottom;
-      if (!bottom || !bottom.length) {
-        dock.hidden = true;
+      // null = 非火药回合；[] = 火药回合但弹堆已空（仍提示）
+      if (bottom == null) {
+        felt.hidden = true;
         shellsEl.innerHTML = '';
         return;
       }
-      dock.hidden = false;
+      felt.hidden = false;
+      if (!bottom.length) {
+        shellsEl.innerHTML = '<span class="gunpowder-felt-empty">弹药堆已空</span>';
+        return;
+      }
       shellsEl.innerHTML = bottom.map((b, i) => {
         const cls = b === 'live' ? 'live' : b === 'blank' ? 'blank' : 'special';
         const mark = b === 'live' ? '实' : b === 'blank' ? '空' : '特';
         const ord = i === 0 ? '最底' : '次底';
-        return `<div class="gunpowder-dock-item"><span class="shell ${cls}"><span>${mark}</span></span><span class="gunpowder-dock-ord">${ord}</span><span class="gunpowder-dock-name">${bulletLabel(b)}</span></div>`;
+        return `<div class="gunpowder-felt-item" title="${ord} · ${bulletLabel(b)}">
+          <span class="shell ${cls}"><span>${mark}</span></span>
+          <span class="gunpowder-felt-meta"><span class="gunpowder-felt-ord">${ord}</span><span class="gunpowder-felt-name">${bulletLabel(b)}</span></span>
+        </div>`;
       }).join('');
     }
 
