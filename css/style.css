@@ -318,8 +318,15 @@ button.primary {
 }
 
 .table-wrap.layout-cross {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* banner + 三等分：队友区(含于牌桌区上半) / 中排 / 自己区 */
+  grid-template-rows: auto minmax(0, 2fr) minmax(0, 1fr);
   overflow: visible;
+}
+
+.table-wrap.layout-cross .bottom-panel {
+  min-height: 0;
+  height: 100%;
+  justify-content: center;
 }
 
 .table-wrap.layout-cross .opponents,
@@ -395,6 +402,19 @@ button.primary {
   z-index: 1;
   overflow: visible;
   padding: 0 6px 4px;
+}
+
+/* 组队十字：牌桌区再二等分 → 上=队友，下=左用户+牌桌+右用户（与底栏合计三等分） */
+.table-wrap.layout-cross .board-arena {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  max-width: 100%;
+  gap: 4px 12px;
+  padding: 0 10px 4px;
+}
+
+.table-wrap.layout-cross .seat-top {
+  align-self: center;
+  max-height: 100%;
 }
 
 .seat-slot {
@@ -3918,11 +3938,22 @@ button.primary {
     padding-right: max(4px, env(safe-area-inset-right, 0px));
   }
 
-  .table-wrap.active,
-  .table-wrap.layout-cross {
+  .table-wrap.active {
     gap: 0;
     overflow: hidden;
     grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .table-wrap.layout-cross {
+    gap: 0;
+    overflow: hidden;
+    grid-template-rows: auto minmax(0, 2fr) minmax(0, 1fr);
+  }
+
+  .table-wrap.layout-cross .bottom-panel {
+    min-height: 0;
+    height: 100%;
+    justify-content: center;
   }
 
   .round-banner {
@@ -3938,7 +3969,7 @@ button.primary {
   .table-wrap.layout-cross .board-arena,
   .table-wrap.layout-trio .board-arena {
     grid-template-columns: minmax(88px, 120px) minmax(0, 1fr) minmax(88px, 120px);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
       ". top ."
       "left felt right";
@@ -3971,7 +4002,7 @@ button.primary {
 
   .seat-top {
     max-width: 88px;
-    align-self: start;
+    align-self: center;
   }
 
   .seat-left,
@@ -4378,6 +4409,10 @@ button.primary {
     padding: 4px 16px 10px;
   }
 
+  .table-wrap.layout-cross .board-arena {
+    max-width: 100%;
+  }
+
   .table-wrap.layout-duel .board-arena {
     max-width: min(920px, 100%);
   }
@@ -4562,6 +4597,10 @@ button.primary {
     grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(200px, 240px);
     gap: 10px 20px;
     padding: 6px 24px 12px;
+  }
+
+  .table-wrap.layout-cross .board-arena {
+    max-width: 100%;
   }
 
   .table-wrap.layout-duel .board-arena {
