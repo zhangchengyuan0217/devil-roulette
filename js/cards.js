@@ -49,6 +49,11 @@ const ROLES = {
 };
 
 const ITEMS = {
+  steal: {
+    id: 'steal', name: '顺手牵羊', glyph: '羊', hue: 95,
+    art: 'assets/tools/steal_pick.jpg',
+    desc: '选中一名有手牌的对手后，随机抽走一张手牌。'
+  },
   lucky_coin: {
     id: 'lucky_coin', name: '幸运硬币', glyph: '币', hue: 42,
     art: 'assets/tools/lucky_coin.jpg',

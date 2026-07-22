@@ -962,6 +962,12 @@ function validateItemUse(state, player, itemId, payload) {
       }
       break;
     }
+    case 'steal': {
+      const t = getPlayer(state, payload.targetActorNr);
+      if (!isOpponent(state, player, t)) return '顺手牵羊目标无效（需选择有手牌的对手）';
+      if (!t.hand.length) return '该对手没有手牌';
+      break;
+    }
     case 'double_arrow': {
       if (!payload.unlock) {
         const raw = payload.targets || [];
@@ -1329,6 +1335,22 @@ function applyItemEffect(state, player, itemId, payload) {
           targetActorNr: t.actorNr
         });
       }
+      break;
+    }
+    case 'steal': {
+      const t = getPlayer(state, payload.targetActorNr);
+      if (!isOpponent(state, player, t) || !t.hand.length) break;
+      const idx = Math.floor(Math.random() * t.hand.length);
+      const stolen = t.hand.splice(idx, 1)[0];
+      player.hand.push(stolen);
+      const stolenName = (ITEMS[stolen] && ITEMS[stolen].name) || stolen;
+      logState(state, `${player.name} 从 ${t.name} 处随机抽走了【${stolenName}】。`);
+      startItemFx(state, player, itemId, payload, {
+        targetName: t.name,
+        targetActorNr: t.actorNr,
+        stolenItemId: stolen,
+        stolenName
+      });
       break;
     }
     case 'double_arrow': {

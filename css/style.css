@@ -3160,6 +3160,7 @@ button.primary {
   font-weight: 700;
 }
 .fx-bind { color: #c5b79a; }
+.fx-steal { color: #9ecf9a; }
 .fx-link { color: #e8a0d0; }
 .fx-unlink { color: #b9a794; }
 

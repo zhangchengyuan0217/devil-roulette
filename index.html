@@ -626,6 +626,15 @@
             (p) => p.alive && Number(p.actorNr) !== Number(bot.actorNr)
           );
           if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
+        } else if (id === 'steal') {
+          const foes = gameState.players.filter(
+            (p) => isOpponent(gameState, bot, p) && p.hand.length
+          );
+          if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
+          else {
+            // 无人可偷则跳过用牌
+            payload._skip = true;
+          }
         } else if (id === 'inspect' || id === 'peek_top') {
           payload.index = 0;
         } else if (id === 'swap' && gameState.magazine.length >= 2) {
@@ -638,7 +647,7 @@
           payload.targets = foes.slice(0, 1).map((p) => p.actorNr);
         }
         // 跳过需要复杂选择且可能无效的牌，直接开枪更稳
-        if (['bind', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'reverse', 'peek_top'].includes(id)) {
+        if (!payload._skip && ['bind', 'steal', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'reverse', 'peek_top'].includes(id)) {
           handleAction(gameState, curNr, { type: 'use_item', itemIndex: idx, payload });
           refreshLocalView();
           return;
@@ -1952,6 +1961,12 @@
       } else if (id === 'bind') {
         stageHtml = `<div class="fx-icon fx-bind">跳过下回合</div>`;
         resultText = `${who} → ${awaiting.targetName || '目标'}：下一回合无法行动`;
+      } else if (id === 'steal') {
+        const stolenLabel = awaiting.stolenName || (awaiting.stolenItemId ? itemMeta(awaiting.stolenItemId).name : '道具');
+        stageHtml = awaiting.stolenItemId
+          ? `<div class="fx-card-row">${fxMiniCardHtml(awaiting.stolenItemId)}</div>`
+          : `<div class="fx-icon fx-steal">随机抽走</div>`;
+        resultText = `${who} 从 ${awaiting.targetName || '对手'} 处随机抽走了【${stolenLabel}】`;
       } else if (id === 'iron_rose') {
         const cards = (awaiting.discarded || []).map((cid) => fxMiniCardHtml(cid)).join('');
         stageHtml = `<div class="fx-card-row">${cards || '<div class="fx-icon fx-heal">+1 HP</div>'}</div>`;
@@ -3384,6 +3399,29 @@
           min: 1,
           max: 1,
           confirmLabel: '捆绑',
+          onConfirm: (nrs) => {
+            sendAction({ type: 'use_item', itemIndex, payload: { targetActorNr: nrs[0] } });
+            selectedHand = [];
+          }
+        });
+        return;
+      }
+
+      if (itemId === 'steal') {
+        openPlayerPicker({
+          title: '顺手牵羊',
+          sub: '选择一名有手牌的对手，随机抽走其中 1 张',
+          players: view.players,
+          selectable: (p) => {
+            if (!p.alive || Number(p.actorNr) === Number(myActorNr)) return false;
+            if ((p.handCount || 0) < 1) return false;
+            const me = view.players.find((x) => Number(x.actorNr) === Number(myActorNr));
+            if (view.mode === 'team' && me) return Number(p.team) !== Number(me.team);
+            return true;
+          },
+          min: 1,
+          max: 1,
+          confirmLabel: '随机抽走',
           onConfirm: (nrs) => {
             sendAction({ type: 'use_item', itemIndex, payload: { targetActorNr: nrs[0] } });
             selectedHand = [];
