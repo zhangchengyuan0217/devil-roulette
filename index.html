@@ -107,6 +107,7 @@
       <div class="actions-dock" id="actionBar">
         <button id="useItemBtn" type="button" disabled>使用道具</button>
         <button id="ironRoseBtn" type="button" disabled style="display:none">铁玫瑰</button>
+        <button id="forceWinBtn" type="button" style="display:none" title="模拟调试：直接触发结算动画">直接获胜</button>
         <span id="snakeBar" style="display:none;align-items:center;gap:8px">
           <span class="meta" id="snakeHint"></span>
           <button id="snakeBtn" class="primary" type="button">复制到手牌（-1血）</button>
@@ -133,6 +134,15 @@
       <div class="first-spin-role" id="firstSpinRole"></div>
     </div>
     <div class="first-spin-result" id="firstSpinResult"></div>
+  </div>
+
+  <div class="win-overlay" id="winOverlay">
+    <div class="win-burst" aria-hidden="true"></div>
+    <div class="win-title">对局结算</div>
+    <div class="win-sub" id="winSub">胜负已分…</div>
+    <div class="win-row" id="winRow"></div>
+    <div class="win-result" id="winResult"></div>
+    <button class="primary" type="button" id="winCloseBtn">确定</button>
   </div>
 
   <div class="ammo-draw-overlay" id="ammoDrawOverlay">
@@ -336,6 +346,8 @@
     let shotRevealTimer = null;
     let lastItemFxToken = '';
     let itemFxTimer = null;
+    let lastWinKey = '';
+    let winAnimTimer = null;
     let snakeTimer = null;
     let snakeTimerToken = '';
     let snakeCountdownTimer = null;
@@ -675,6 +687,7 @@
       lastEjectToken = '';
       lastShotRevealToken = '';
       lastItemFxToken = '';
+      lastWinKey = '';
       selectedHand = [];
       selectedTarget = null;
       initPlayers(gameState, actors, mode);
@@ -736,6 +749,7 @@
       lastEjectToken = '';
       lastShotRevealToken = '';
       lastItemFxToken = '';
+      lastWinKey = '';
       offlineSim = false;
       gameState = null;
       fullStateBackup = null;
@@ -848,6 +862,7 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
+      maybeShowWinCeremony();
       armAwaitingWatchdog();
       armInteractiveCountdown();
     }
@@ -924,11 +939,16 @@
       [
         'revealOverlay', 'firstSpinOverlay', 'ammoDrawOverlay', 'diceOverlay',
         'ejectOverlay', 'shotRevealOverlay', 'itemFxOverlay', 'swapPickOverlay', 'playerPickOverlay',
-        'discardHandOverlay', 'dbDeclareOverlay', 'dbRevealOverlay', 'shootConfirmOverlay'
+        'discardHandOverlay', 'dbDeclareOverlay', 'dbRevealOverlay', 'shootConfirmOverlay', 'winOverlay'
       ].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.classList.remove('show', 'landed', 'success', 'fail', 'reveal', 'is-live', 'is-blank', 'is-special');
+        if (el) el.classList.remove('show', 'landed', 'success', 'fail', 'reveal', 'is-live', 'is-blank', 'is-special', 'play', 'team-red', 'team-blue', 'is-draw');
       });
+      if (winAnimTimer) {
+        clearTimeout(winAnimTimer);
+        winAnimTimer = null;
+      }
+      lastWinKey = '';
     }
 
     function resetToLobbyLocal(statusText) {
@@ -1168,6 +1188,7 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
+      maybeShowWinCeremony();
       armAwaitingWatchdog();
       armInteractiveCountdown();
     };
@@ -1356,6 +1377,7 @@
             cube.classList.remove('land');
             castEl.innerHTML = '';
             finishPainkillerDice();
+            maybeShowWinCeremony();
           }, 1200);
         }
       }, 70);
@@ -1525,6 +1547,7 @@
               card.classList.remove('ready');
               shotRevealTimer = null;
               finishShotReveal();
+              maybeShowWinCeremony();
             }, 900);
           }, 1500);
         }, 480);
@@ -1712,6 +1735,7 @@
           cast.innerHTML = '';
           itemFxTimer = null;
           finishItemFx();
+          maybeShowWinCeremony();
         }, 1400);
       }, 1300);
     }
@@ -1719,6 +1743,133 @@
     function finishFirstPlayerSpin() {
       sendAction({ type: 'first_player_done' });
     }
+
+    function winCeremonyKey(v) {
+      if (!v || v.phase !== 'ended') return '';
+      if (v.winner != null) return `w-${v.winner}-${v.seq || 0}`;
+      if (v.winnerTeam != null) return `t-${v.winnerTeam}-${v.seq || 0}`;
+      return `draw-${v.seq || 0}`;
+    }
+
+    function closeWinCeremony() {
+      const overlay = document.getElementById('winOverlay');
+      if (winAnimTimer) {
+        clearTimeout(winAnimTimer);
+        winAnimTimer = null;
+      }
+      overlay.classList.remove('show', 'landed', 'play', 'team-red', 'team-blue', 'is-draw');
+      const row = document.getElementById('winRow');
+      if (row) row.innerHTML = '';
+    }
+
+    function maybeShowWinCeremony() {
+      const overlay = document.getElementById('winOverlay');
+      if (!view || view.phase !== 'ended') {
+        if (overlay.classList.contains('show') && (!view || view.phase === 'lobby' || view.phase === 'playing')) {
+          closeWinCeremony();
+        }
+        return;
+      }
+      // 等开枪/道具等公示动画播完再结算，避免被盖住
+      if (document.getElementById('shotRevealOverlay').classList.contains('show')) return;
+      if (document.getElementById('itemFxOverlay').classList.contains('show')) return;
+      if (document.getElementById('diceOverlay').classList.contains('show')) return;
+      if (document.getElementById('ejectOverlay').classList.contains('show')) return;
+      if (document.getElementById('ammoDrawOverlay').classList.contains('show')) return;
+      if (document.getElementById('firstSpinOverlay').classList.contains('show')) return;
+      if (document.getElementById('revealOverlay').classList.contains('show')) return;
+
+      const key = winCeremonyKey(view);
+      if (!key) return;
+      if (key === lastWinKey) {
+        if (!overlay.classList.contains('show') && !overlay.dataset.dismissed) {
+          overlay.classList.add('show', 'landed');
+        }
+        return;
+      }
+      lastWinKey = key;
+      delete overlay.dataset.dismissed;
+      playWinCeremony();
+    }
+
+    function playWinCeremony() {
+      const overlay = document.getElementById('winOverlay');
+      const row = document.getElementById('winRow');
+      const resultEl = document.getElementById('winResult');
+      const subEl = document.getElementById('winSub');
+
+      if (winAnimTimer) {
+        clearTimeout(winAnimTimer);
+        winAnimTimer = null;
+      }
+
+      overlay.classList.remove('landed', 'play', 'team-red', 'team-blue', 'is-draw');
+      resultEl.textContent = '';
+      subEl.textContent = '胜负已分…';
+
+      let winners = [];
+      let resultText = '平局';
+      let subText = '胜负已分…';
+
+      if (view.winner != null) {
+        const p = (view.players || []).find((x) => Number(x.actorNr) === Number(view.winner));
+        if (p) winners = [p];
+        const name = p ? p.name : `玩家#${view.winner}`;
+        resultText = `${name} 获胜！`;
+        subText = Number(view.winner) === Number(myActorNr) ? '你活到了最后' : '最后一名存活者';
+      } else if (view.winnerTeam != null) {
+        const teamName = view.winnerTeam === 0 ? '红队' : '蓝队';
+        winners = (view.players || []).filter(
+          (p) => Number(p.team) === Number(view.winnerTeam) && p.alive
+        );
+        if (!winners.length) {
+          winners = (view.players || []).filter((p) => Number(p.team) === Number(view.winnerTeam));
+        }
+        resultText = `${teamName} 获胜！`;
+        subText = winners.map((p) => p.name).join(' · ') || '队伍胜出';
+        overlay.classList.add(view.winnerTeam === 0 ? 'team-red' : 'team-blue');
+        const myTeam = (view.players || []).find((p) => Number(p.actorNr) === Number(myActorNr));
+        if (myTeam && Number(myTeam.team) === Number(view.winnerTeam)) {
+          subText = '你们的队伍获胜了';
+        }
+      } else {
+        resultText = '平局';
+        subText = '无人存活';
+        overlay.classList.add('is-draw');
+      }
+
+      row.innerHTML = winners.map((p, i) => {
+        const meta = roleMeta(p.role);
+        const hue = meta.hue || 30;
+        const artBg = meta.art
+          ? `linear-gradient(180deg, rgba(8,6,4,0.08), rgba(8,6,4,0.72)), url('${meta.art}')`
+          : '';
+        const artClass = meta.art ? ' has-art' : '';
+        return `
+          <div class="win-card${artClass}" style="--hue:${hue};animation-delay:${0.12 + i * 0.14}s;${artBg ? `background-image:${artBg};` : ''}">
+            <div class="win-card-seat">#${p.actorNr}</div>
+            <div class="win-card-name">${p.name}</div>
+            <div class="win-card-role">${p.roleName || meta.name || ''}</div>
+          </div>
+        `;
+      }).join('') || '<div class="win-draw-mark">⚔</div>';
+
+      overlay.classList.add('show');
+      requestAnimationFrame(() => overlay.classList.add('play'));
+
+      winAnimTimer = setTimeout(() => {
+        overlay.classList.add('landed');
+        resultEl.textContent = resultText;
+        subEl.textContent = subText;
+        winAnimTimer = null;
+      }, 700);
+    }
+
+    document.getElementById('winCloseBtn').onclick = () => {
+      const overlay = document.getElementById('winOverlay');
+      overlay.dataset.dismissed = '1';
+      closeWinCeremony();
+    };
 
     function maybeShowFirstSpin() {
       const overlay = document.getElementById('firstSpinOverlay');
@@ -2460,6 +2611,9 @@
       ironRoseBtn.style.display = isIronRose ? '' : 'none';
       ironRoseBtn.disabled = !(myTurn && isIronRose && selectedHand.length === 2);
 
+      const forceWinBtn = document.getElementById('forceWinBtn');
+      forceWinBtn.style.display = offlineSim && view.phase === 'playing' ? '' : 'none';
+
       const snakeBar = document.getElementById('snakeBar');
       const snakeAwait = view.awaiting && view.awaiting.type === 'rattlesnake';
       if (snakeAwait) {
@@ -2541,6 +2695,7 @@
       lastEjectToken = '';
       lastShotRevealToken = '';
       lastItemFxToken = '';
+      lastWinKey = '';
       initPlayers(gameState, actors, mode);
       if (mode === 'team') {
         gameState.players.forEach((p, i) => { p.team = i % 2; });
@@ -2730,6 +2885,47 @@
 
     document.getElementById('simBtn').onclick = () => startOfflineSim();
     document.getElementById('exitSimBtn').onclick = () => exitOfflineSim();
+
+    function forceWinInSim() {
+      if (!offlineSim || !gameState) return;
+      if (gameState.phase !== 'playing') return;
+      clearBotTimer();
+      clearGameOverlays();
+      gameState.awaiting = null;
+      const me = getPlayer(gameState, myActorNr);
+      if (!me) return;
+
+      if (gameState.mode === 'team') {
+        gameState.players.forEach((p) => {
+          if (Number(p.team) === Number(me.team)) {
+            p.alive = true;
+            if (p.hp < 1) p.hp = 1;
+          } else {
+            p.alive = false;
+            p.hp = 0;
+          }
+        });
+      } else {
+        gameState.players.forEach((p) => {
+          if (Number(p.actorNr) === Number(myActorNr)) {
+            p.alive = true;
+            if (p.hp < 1) p.hp = 1;
+          } else {
+            p.alive = false;
+            p.hp = 0;
+          }
+        });
+      }
+
+      lastWinKey = '';
+      const winOverlay = document.getElementById('winOverlay');
+      if (winOverlay) delete winOverlay.dataset.dismissed;
+      checkWin(gameState);
+      gameLog('—— 模拟调试：直接获胜 ——');
+      refreshLocalView();
+    }
+
+    document.getElementById('forceWinBtn').onclick = () => forceWinInSim();
 
     function playerLabel(actorNr) {
       const p = view && view.players && view.players.find((x) => x.actorNr === actorNr);
