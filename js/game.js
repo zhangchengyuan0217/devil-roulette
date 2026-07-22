@@ -130,6 +130,7 @@ function initPlayers(state, actors, mode) {
   state.mode = mode || 'ffa';
   state.players = actors.map((a, i) => ({
     actorNr: a.actorNr,
+    userId: a.userId || '',
     name: a.name || `玩家${a.actorNr}`,
     hp: MAX_HP,
     role: null,
@@ -158,8 +159,61 @@ function initPlayers(state, actors, mode) {
   state.phase = 'playing';
   state.round = 0;
   state.winner = null;
+  state.winnerTeam = null;
   logState(state, `游戏开始（${state.mode === 'team' ? '组队' : '混战'}）。角色已发放。`);
   startRound(state);
+}
+
+/** 重连后座位号变化时，把对局里的旧 actorNr 全部映射到新座位 */
+function remapActorNr(state, oldNr, newNr) {
+  const from = Number(oldNr);
+  const to = Number(newNr);
+  if (!state || !Number.isFinite(from) || !Number.isFinite(to) || from === to) return false;
+  const p = getPlayer(state, from);
+  if (!p) return false;
+  if (getPlayer(state, to)) return false;
+
+  const swap = (n) => (Number(n) === from ? to : n);
+
+  p.actorNr = to;
+  state.turnOrder = (state.turnOrder || []).map(swap);
+  if (state.handDiscardQueue) state.handDiscardQueue = state.handDiscardQueue.map(swap);
+  if (state.rattlesnakeQueue) state.rattlesnakeQueue = state.rattlesnakeQueue.map(swap);
+
+  if (state.effects) {
+    if (Array.isArray(state.effects.linkedPairs)) {
+      state.effects.linkedPairs = state.effects.linkedPairs.map((pair) => pair.map(swap));
+    }
+    if (state.effects.doubleItemBonus && state.effects.doubleItemBonus[from] != null) {
+      state.effects.doubleItemBonus[to] = state.effects.doubleItemBonus[from];
+      delete state.effects.doubleItemBonus[from];
+    }
+  }
+
+  if (state.rattlesnakeUsedThisRound && state.rattlesnakeUsedThisRound[from] != null) {
+    state.rattlesnakeUsedThisRound[to] = state.rattlesnakeUsedThisRound[from];
+    delete state.rattlesnakeUsedThisRound[from];
+  }
+
+  if (state.awaiting && Number(state.awaiting.actorNr) === from) {
+    state.awaiting.actorNr = to;
+  }
+  if (state.awaiting && state.awaiting.targetActorNr != null && Number(state.awaiting.targetActorNr) === from) {
+    state.awaiting.targetActorNr = to;
+  }
+  if (state.lastItemForSnake && Number(state.lastItemForSnake.from) === from) {
+    state.lastItemForSnake.from = to;
+  }
+  if (Number(state.winner) === from) state.winner = to;
+  if (Number(state.masterActorNr) === from) state.masterActorNr = to;
+
+  logState(state, `${p.name} 重连，座位 #${from} → #${to}`);
+  return true;
+}
+
+function findPlayerByUserId(state, userId) {
+  if (!state || !userId) return null;
+  return state.players.find((p) => p.userId && p.userId === userId) || null;
 }
 
 function drawItems(state, player, n) {

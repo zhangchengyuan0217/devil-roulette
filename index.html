@@ -59,6 +59,7 @@
         <option value="4" selected>模拟 4 人</option>
       </select>
       <button id="startBtn" class="primary" type="button" disabled>开始游戏</button>
+      <button id="syncGameBtn" type="button" style="display:none" title="卡在大厅时点此同步对局">同步对局</button>
       <button id="simBtn" class="primary" type="button">模拟对局</button>
       <button id="exitSimBtn" type="button" style="display:none">退出模拟</button>
     </div>
@@ -363,6 +364,9 @@
     let lastDbDeclareToken = '';
     let lastDbRevealToken = '';
     let dbRevealTimer = null;
+    let lobbySyncTimer = null;
+    let startResyncTimers = [];
+    let lastAppliedStateSeq = -1;
 
     function getStableUserId() {
       const key = 'devil_roulette_uid';
@@ -777,7 +781,117 @@
       return copy;
     }
 
-    function persistAndBroadcast() {
+    function clearStartResyncTimers() {
+      startResyncTimers.forEach((t) => clearTimeout(t));
+      startResyncTimers = [];
+    }
+
+    function clearLobbySyncTimer() {
+      if (lobbySyncTimer) {
+        clearInterval(lobbySyncTimer);
+        lobbySyncTimer = null;
+      }
+    }
+
+    /** 用完整权威状态生成自己的视图（丢 EVT_STATE 时的兜底） */
+    function applyFullStateAsView(full, reason) {
+      if (!full || !full.phase) return false;
+      if (full.phase !== 'playing' && full.phase !== 'ended') return false;
+      const seq = Number(full.seq) || 0;
+      // 允许同 seq 再应用一次（开局补发），但避免无意义回退
+      if (seq > 0 && seq < lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
+        return false;
+      }
+      try {
+        const clone = JSON.parse(JSON.stringify(full));
+        applyView(publicView(clone, myActorNr));
+        lastAppliedStateSeq = Math.max(lastAppliedStateSeq, seq);
+        if (reason) gameLog(`已同步对局（${reason}）`);
+        clearLobbySyncTimer();
+        return true;
+      } catch (e) {
+        console.warn('applyFullStateAsView failed', e);
+        return false;
+      }
+    }
+
+    function tryApplyRoomSavedState(reason) {
+      if (!client || !client.isJoinedToRoom()) return false;
+      if (view && (view.phase === 'playing' || view.phase === 'ended')) return false;
+      try {
+        const props = client.myRoom().getCustomProperties() || {};
+        if (!props.gs) return false;
+        const st = typeof props.gs === 'string' ? JSON.parse(props.gs) : props.gs;
+        if (!st) return false;
+        fullStateBackup = slimStateForPersist(st);
+        return applyFullStateAsView(st, reason || '房间存档');
+      } catch (e) {
+        console.warn(e);
+        return false;
+      }
+    }
+
+    function needsGameSync() {
+      if (offlineSim) return false;
+      if (!client || !client.isJoinedToRoom()) return false;
+      if (isHost() && gameState) return false;
+      if (view && (view.phase === 'playing' || view.phase === 'ended')) return false;
+      try {
+        if (fullStateBackup && (fullStateBackup.phase === 'playing' || fullStateBackup.phase === 'ended')) {
+          return true;
+        }
+        const props = client.myRoom().getCustomProperties() || {};
+        if (props.gs) return true;
+      } catch (e) {}
+      return false;
+    }
+
+    function armLobbySyncWatchdog() {
+      clearLobbySyncTimer();
+      if (offlineSim || !client || !client.isJoinedToRoom()) return;
+      if (view && (view.phase === 'playing' || view.phase === 'ended')) return;
+      if (isHost() && gameState) return;
+
+      let ticks = 0;
+      lobbySyncTimer = setInterval(() => {
+        if (!client || !client.isJoinedToRoom()) {
+          clearLobbySyncTimer();
+          return;
+        }
+        if (view && (view.phase === 'playing' || view.phase === 'ended')) {
+          clearLobbySyncTimer();
+          return;
+        }
+        if (isHost() && gameState) {
+          clearLobbySyncTimer();
+          return;
+        }
+        ticks += 1;
+        const stuck = needsGameSync();
+        // 已有对局痕迹：每 2s 积极同步；否则约每 10s 问一次（防开局前刷屏）
+        if (!stuck && ticks % 5 !== 0) return;
+        tryApplyRoomSavedState('定时存档');
+        if (!(view && (view.phase === 'playing' || view.phase === 'ended'))) {
+          requestSync();
+          if (stuck) gameLog('尚未进入对局，向房主请求同步…');
+        }
+      }, 2000);
+    }
+
+    function pushPersonalizedStates() {
+      if (!gameState || !client || !client.isJoinedToRoom()) return;
+      roomActors().forEach((actor) => {
+        try {
+          client.raiseEvent(EVT_STATE, publicView(gameState, actor.actorNr), {
+            targetActors: [actor.actorNr]
+          });
+        } catch (e) {
+          console.warn('push state failed', actor && actor.actorNr, e);
+        }
+      });
+    }
+
+    function persistAndBroadcast(opts) {
       if (!gameState || !isHost()) return;
 
       if (offlineSim) {
@@ -787,27 +901,47 @@
 
       fullStateBackup = slimStateForPersist(gameState);
 
-      // 房间属性备份：房主刷新后空房仍在时，可从属性恢复
+      // 房间属性备份：房主刷新后空房仍在时，可从属性恢复；掉线玩家也可读
       try {
         const payload = JSON.stringify(fullStateBackup);
-        if (payload.length < 12000) {
-          client.myRoom().setCustomProperties({ gs: payload });
+        if (payload.length < 48000) {
+          client.myRoom().setCustomProperties({ gs: payload, gsSeq: gameState.seq || 0 });
+        } else {
+          console.warn('game state too large for room props', payload.length);
         }
       } catch (e) {
         console.warn('persist room props failed', e);
       }
 
-      // 发给所有人做内存备份，便于 Master 迁移
-      client.raiseEvent(EVT_FULL, fullStateBackup, {
-        receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
-      });
-
-      roomActors().forEach((actor) => {
-        client.raiseEvent(EVT_STATE, publicView(gameState, actor.actorNr), {
-          targetActors: [actor.actorNr]
+      // 全员完整状态：丢个性化 EVT_STATE 时仍可进局
+      try {
+        client.raiseEvent(EVT_FULL, fullStateBackup, {
+          receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
         });
-      });
+      } catch (e) {
+        console.warn('EVT_FULL failed', e);
+      }
+
+      pushPersonalizedStates();
       applyView(publicView(gameState, myActorNr));
+      lastAppliedStateSeq = Number(gameState.seq) || lastAppliedStateSeq;
+
+      if (opts && opts.resync) {
+        clearStartResyncTimers();
+        // 弱网补发：开局后短延迟再推两次，减少「四人进房却一人没开局」
+        [700, 2200].forEach((ms) => {
+          startResyncTimers.push(setTimeout(() => {
+            if (!isHost() || !gameState) return;
+            try {
+              client.raiseEvent(EVT_FULL, slimStateForPersist(gameState), {
+                receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
+              });
+            } catch (e) {}
+            pushPersonalizedStates();
+            gameLog(`开局状态补发（${ms}ms）`);
+          }, ms));
+        });
+      }
     }
 
     function broadcastState() {
@@ -827,7 +961,7 @@
       try {
         const props = client.myRoom().getCustomProperties() || {};
         if (props.gs) {
-          gameState = JSON.parse(props.gs);
+          gameState = typeof props.gs === 'string' ? JSON.parse(props.gs) : props.gs;
           fullStateBackup = slimStateForPersist(gameState);
           gameLog(`已成为房主，已从房间存档恢复对局（${reason}）`);
           persistAndBroadcast();
@@ -840,16 +974,49 @@
     }
 
     function requestSync() {
-      client.raiseEvent(EVT_HELLO, { actorNr: myActorNr }, {
+      if (!client || !client.isJoinedToRoom()) return;
+      client.raiseEvent(EVT_HELLO, { actorNr: myActorNr, userId: getStableUserId() }, {
         receivers: Photon.LoadBalancing.Constants.ReceiverGroup.All
       });
+    }
+
+    function actorUserId(actor) {
+      if (!actor) return '';
+      return actor.userId || '';
+    }
+
+    /** 房主：把重连玩家对回对局里的座位 */
+    function hostRematchJoiner(actor) {
+      if (!isHost() || !gameState || !actor) return false;
+      if (gameState.phase !== 'playing' && gameState.phase !== 'ended') return false;
+      const nr = Number(actor.actorNr);
+      if (getPlayer(gameState, nr)) {
+        const p = getPlayer(gameState, nr);
+        if (p) {
+          p.name = actorDisplayName(actor);
+          if (!p.userId) p.userId = actorUserId(actor);
+        }
+        return false;
+      }
+      const uid = actorUserId(actor);
+      const byUid = findPlayerByUserId(gameState, uid);
+      if (byUid && remapActorNr(gameState, byUid.actorNr, nr)) {
+        byUid.userId = uid;
+        byUid.name = actorDisplayName(actor);
+        return true;
+      }
+      return false;
     }
 
     function applyView(v) {
       const wasLobby = !view || view.phase === 'lobby';
       view = v;
-      if (v.phase === 'playing' || v.phase === 'ended') {
+      if (v && (v.seq || v.seq === 0)) {
+        lastAppliedStateSeq = Math.max(lastAppliedStateSeq, Number(v.seq) || 0);
+      }
+      if (v && (v.phase === 'playing' || v.phase === 'ended')) {
         maybeShowReveal(wasLobby);
+        clearLobbySyncTimer();
       }
       render();
       syncLogFromView();
@@ -865,6 +1032,10 @@
       maybeShowWinCeremony();
       armAwaitingWatchdog();
       armInteractiveCountdown();
+      // 进房后若仍停在大厅，启动兜底同步（真正卡住时会积极拉取）
+      if (!(v && (v.phase === 'playing' || v.phase === 'ended'))) {
+        armLobbySyncWatchdog();
+      }
     }
 
     function joinPreferredRoom(preferRejoin) {
@@ -954,6 +1125,8 @@
     function resetToLobbyLocal(statusText) {
       clearBotTimer();
       clearGameOverlays();
+      clearLobbySyncTimer();
+      clearStartResyncTimers();
       gameState = null;
       fullStateBackup = null;
       view = { phase: 'lobby', players: [], turnOrder: [], currentTurn: 0, publicLog: [] };
@@ -962,6 +1135,7 @@
       selectedTarget = null;
       revealedOnce = false;
       lastRevealKey = '';
+      lastAppliedStateSeq = -1;
       joinInFlight = false;
       window.__rejoinPending = false;
       statusDiv.textContent = statusText || '已回到大厅';
@@ -2314,6 +2488,13 @@
       document.getElementById('startBtn').disabled = offlineSim || !(isHost() && (!view || view.phase === 'lobby' || view.phase === 'ended'));
       document.getElementById('simBtn').disabled = false;
       document.getElementById('exitSimBtn').style.display = offlineSim ? '' : 'none';
+      const syncBtn = document.getElementById('syncGameBtn');
+      if (syncBtn) {
+        const inGameView = view && (view.phase === 'playing' || view.phase === 'ended');
+        const showSync = !offlineSim && inRoom && !inGameView;
+        syncBtn.style.display = showSync ? '' : 'none';
+        syncBtn.disabled = !showSync;
+      }
       const disbandBtn = document.getElementById('disbandBtn');
       if (disbandBtn) {
         // 仅房主、且已在真实房间时可解散
@@ -2714,7 +2895,8 @@
       applyMyPhotonName(readPlayerName());
       const actors = roomActors().map((a) => ({
         actorNr: a.actorNr,
-        name: actorDisplayName(a)
+        name: actorDisplayName(a),
+        userId: actorUserId(a)
       }));
       if (actors.length < 2) {
         alert('至少需要 2 名玩家');
@@ -2736,6 +2918,7 @@
       lastShotRevealToken = '';
       lastItemFxToken = '';
       lastWinKey = '';
+      lastAppliedStateSeq = -1;
       initPlayers(gameState, actors, mode);
       if (mode === 'team') {
         gameState.players.forEach((p, i) => { p.team = i % 2; });
@@ -2756,7 +2939,7 @@
           gameState.currentTurn = 0;
         }
       }
-      broadcastState();
+      persistAndBroadcast({ resync: true });
     }
 
     function createClient(preferRejoin) {
@@ -2851,12 +3034,14 @@
           tryBecomeHostWithBackup('进房');
         }
 
+        // 先尝试房间存档进局，再向房主要最新状态（防开局包丢失）
         if (!gameState) {
-          // 先显示大厅，再向房主要状态
           if (!view || view.phase === 'lobby') {
             view = { phase: 'lobby', players: [], turnOrder: [], currentTurn: 0, publicLog: [] };
           }
+          tryApplyRoomSavedState('进房存档');
           requestSync();
+          armLobbySyncWatchdog();
         }
         render();
       };
@@ -2864,7 +3049,10 @@
       client.onActorJoin = function (actor) {
         if (gen !== connectGeneration) return;
         gameLog(`玩家加入 ${actorDisplayName(actor)}（#${actor.actorNr}）`);
-        if (isHost() && gameState) persistAndBroadcast();
+        if (isHost() && gameState) {
+          hostRematchJoiner(actor);
+          persistAndBroadcast();
+        }
         render();
       };
 
@@ -2886,6 +3074,9 @@
         if (code === EVT_ACTION) {
           hostProcessAction(actorNr, content);
         } else if (code === EVT_STATE) {
+          if (content && content.seq != null) {
+            lastAppliedStateSeq = Math.max(lastAppliedStateSeq, Number(content.seq) || 0);
+          }
           applyView(content);
         } else if (code === EVT_FULL) {
           fullStateBackup = content;
@@ -2893,9 +3084,37 @@
           if (isHost() && !gameState && content) {
             gameState = JSON.parse(JSON.stringify(content));
             persistAndBroadcast();
+            return;
+          }
+          // 非房主：用完整状态直接进局（解决开局 EVT_STATE 丢失）
+          if (!isHost() || !gameState) {
+            applyFullStateAsView(content, '全量同步');
           }
         } else if (code === EVT_HELLO) {
-          if (isHost() && gameState) persistAndBroadcast();
+          if (isHost() && gameState) {
+            const who = Number((content && content.actorNr) || actorNr);
+            const uid = (content && content.userId) || '';
+            // 请求者可能是重连后的新座位，先按 userId 对回
+            if (uid) {
+              const byUid = findPlayerByUserId(gameState, uid);
+              if (byUid && Number(byUid.actorNr) !== who && !getPlayer(gameState, who)) {
+                remapActorNr(gameState, byUid.actorNr, who);
+                byUid.userId = uid;
+              } else if (byUid && !byUid.userId) {
+                byUid.userId = uid;
+              }
+            }
+            try {
+              if (who) {
+                client.raiseEvent(EVT_STATE, publicView(gameState, who), {
+                  targetActors: [who]
+                });
+              }
+            } catch (e) {
+              console.warn(e);
+            }
+            persistAndBroadcast();
+          }
         } else if (code === EVT_DISBAND) {
           // 自己是发起方时也会收到 All；用短延迟避免和主动 leave 打架
           if (isHost() && Number(actorNr) === Number(myActorNr)) return;
@@ -2912,8 +3131,11 @@
       preferredRoom = sessionStorage.getItem('dr_room') || preferredRoom || DEFAULT_ROOM;
       statusDiv.textContent = '正在重连...';
       joinInFlight = false;
+      clearLobbySyncTimer();
+      clearStartResyncTimers();
       gameState = null;
       view = null;
+      lastAppliedStateSeq = -1;
       await disconnectClient();
       createClient(!!preferRejoin);
     }
@@ -2921,6 +3143,19 @@
     document.getElementById('startBtn').onclick = () => {
       if (offlineSim) return;
       if (isHost()) startGameAsHost();
+    };
+
+    document.getElementById('syncGameBtn').onclick = () => {
+      if (offlineSim) return;
+      if (!client || !client.isJoinedToRoom()) {
+        alert('请先加入房间');
+        return;
+      }
+      statusDiv.textContent = '正在同步对局…';
+      gameLog('手动请求同步对局');
+      tryApplyRoomSavedState('手动同步');
+      requestSync();
+      armLobbySyncWatchdog();
     };
 
     document.getElementById('simBtn').onclick = () => startOfflineSim();
