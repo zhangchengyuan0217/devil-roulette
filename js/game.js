@@ -11,7 +11,7 @@ const AWAITING_ANIM_MS = {
   eject_anim: 2800,
   item_fx: 3200,
   double_barrel_reveal: 3800,
-  shot_reveal: 4200
+  shot_reveal: 5600
 };
 
 /** 需玩家操作的窗口超时（弃牌 / 双管） */

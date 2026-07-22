@@ -1113,8 +1113,10 @@
         'discardHandOverlay', 'dbDeclareOverlay', 'dbRevealOverlay', 'shootConfirmOverlay', 'winOverlay'
       ].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.classList.remove('show', 'landed', 'success', 'fail', 'reveal', 'is-live', 'is-blank', 'is-special', 'play', 'team-red', 'team-blue', 'is-draw');
+        if (el) el.classList.remove('show', 'landed', 'success', 'fail', 'reveal', 'is-live', 'is-blank', 'is-special', 'play', 'team-red', 'team-blue', 'is-draw', 'is-flipping');
       });
+      const shotCard = document.getElementById('shotRevealCard');
+      if (shotCard) shotCard.classList.remove('ready', 'flip-mid', 'flip-done');
       if (winAnimTimer) {
         clearTimeout(winAnimTimer);
         winAnimTimer = null;
@@ -1663,7 +1665,9 @@
       const awaiting = view && view.awaiting;
       if (!awaiting || awaiting.type !== 'shot_reveal') {
         if (shotRevealTimer) return;
-        overlay.classList.remove('show', 'reveal', 'landed', 'is-live', 'is-blank', 'is-special');
+        overlay.classList.remove('show', 'reveal', 'landed', 'is-live', 'is-blank', 'is-special', 'is-flipping');
+        const cardEl = document.getElementById('shotRevealCard');
+        if (cardEl) cardEl.classList.remove('ready', 'flip-mid', 'flip-done');
         return;
       }
       if (document.getElementById('revealOverlay').classList.contains('show')) return;
@@ -1690,51 +1694,85 @@
         shotRevealTimer = null;
       }
 
-      const showKind = awaiting.raw || awaiting.resolved;
+      const rawKind = awaiting.raw || awaiting.resolved;
+      const resolvedKind = awaiting.resolved || awaiting.raw;
+      const flipped = awaiting.raw && awaiting.resolved && awaiting.raw !== awaiting.resolved;
       const rawLabel = bulletLabel(awaiting.raw);
       const resolvedLabel = bulletLabel(awaiting.resolved);
       const who = awaiting.name || `玩家#${awaiting.actorNr}`;
       const targetName = awaiting.toSelf ? '自己' : (awaiting.targetName || '目标');
-      const kindClass = showKind === 'live' ? 'is-live' : showKind === 'blank' ? 'is-blank' : 'is-special';
-      const art = bulletArtPath(showKind);
+      const rawClass = rawKind === 'live' ? 'is-live' : rawKind === 'blank' ? 'is-blank' : 'is-special';
+      const resolvedClass = resolvedKind === 'live' ? 'is-live' : resolvedKind === 'blank' ? 'is-blank' : 'is-special';
+      const rawArt = bulletArtPath(rawKind);
+      const resolvedArt = bulletArtPath(resolvedKind);
 
       img.removeAttribute('src');
-      if (art) {
-        img.src = art;
+      if (rawArt) {
+        img.src = rawArt;
         img.alt = rawLabel;
       }
       nameEl.textContent = '';
       resultEl.textContent = '';
       sub.textContent = `${who} 向 ${targetName} 开枪…`;
 
-      overlay.classList.remove('reveal', 'landed', 'is-live', 'is-blank', 'is-special');
+      overlay.classList.remove('reveal', 'landed', 'is-live', 'is-blank', 'is-special', 'is-flipping');
+      card.classList.remove('ready', 'flip-mid', 'flip-done');
       overlay.classList.add('show');
-      card.classList.remove('ready');
       if (shutter) shutter.style.height = '100%';
 
-      // 黑卡先入场，再自上而下揭开弹面（遮罩贴底收缩）
+      const finishOverlay = () => {
+        overlay.classList.remove('show', 'reveal', 'landed', 'is-live', 'is-blank', 'is-special', 'is-flipping');
+        card.classList.remove('ready', 'flip-mid', 'flip-done');
+        shotRevealTimer = null;
+        finishShotReveal();
+        maybeShowWinCeremony();
+      };
+
+      const landAndClose = () => {
+        overlay.classList.add('landed');
+        shotRevealTimer = setTimeout(finishOverlay, 900);
+      };
+
+      // 黑卡先入场，再自上而下揭开弹面；若被反转/快轮改写，再左右翻到最终弹面
       requestAnimationFrame(() => {
         card.classList.add('ready');
         shotRevealTimer = setTimeout(() => {
-          overlay.classList.add('reveal', kindClass);
+          overlay.classList.add('reveal', rawClass);
           if (shutter) shutter.style.height = '0%';
           nameEl.textContent = rawLabel;
-          let detail = `抽出【${rawLabel}】`;
-          if (awaiting.raw !== awaiting.resolved) {
-            detail += ` → 结算为【${resolvedLabel}】`;
+          resultEl.textContent = flipped
+            ? `抽出【${rawLabel}】…`
+            : (`抽出【${rawLabel}】` + (awaiting.shotgunUsed ? ' · 霰弹枪×2' : ''));
+
+          if (!flipped) {
+            shotRevealTimer = setTimeout(landAndClose, 1500);
+            return;
           }
-          if (awaiting.shotgunUsed) detail += ' · 霰弹枪×2';
-          resultEl.textContent = detail;
+
+          // 左右翻转：中途换成最终弹药立绘
           shotRevealTimer = setTimeout(() => {
-            overlay.classList.add('landed');
+            overlay.classList.add('is-flipping');
+            card.classList.add('flip-mid');
+            sub.textContent = '反转结算中…';
             shotRevealTimer = setTimeout(() => {
-              overlay.classList.remove('show', 'reveal', 'landed', 'is-live', 'is-blank', 'is-special');
-              card.classList.remove('ready');
-              shotRevealTimer = null;
-              finishShotReveal();
-              maybeShowWinCeremony();
-            }, 900);
-          }, 1500);
+              if (resolvedArt) {
+                img.src = resolvedArt;
+                img.alt = resolvedLabel;
+              }
+              overlay.classList.remove(rawClass);
+              overlay.classList.add(resolvedClass);
+              nameEl.textContent = resolvedLabel;
+              let detail = `抽出【${rawLabel}】 → 结算为【${resolvedLabel}】`;
+              if (awaiting.shotgunUsed) detail += ' · 霰弹枪×2';
+              resultEl.textContent = detail;
+              card.classList.remove('flip-mid');
+              void card.offsetWidth;
+              card.classList.add('flip-done');
+              overlay.classList.remove('is-flipping');
+              sub.textContent = `${who} 向 ${targetName} 开枪`;
+              shotRevealTimer = setTimeout(landAndClose, 1250);
+            }, 400);
+          }, 1150);
         }, 480);
       });
     }
@@ -1883,7 +1921,22 @@
         stageHtml = `<div class="fx-swap"><span class="fx-shell unknown"><span>${awaiting.swapFrom || '?'}</span></span><span class="fx-swap-arrow">⇄</span><span class="fx-shell unknown"><span>${awaiting.swapTo || '?'}</span></span></div>`;
         resultText = `${who} 交换第 ${awaiting.swapFrom} 发 ↔ 第 ${awaiting.swapTo} 发`;
       } else if (id === 'reverse') {
-        stageHtml = `<div class="fx-icon fx-reverse">实 ⇄ 空</div>`;
+        const liveArt = bulletArtPath('live');
+        const blankArt = bulletArtPath('blank');
+        stageHtml = `
+          <div class="fx-reverse-stage">
+            <div class="fx-reverse-scene">
+              <div class="fx-reverse-inner">
+                <div class="fx-reverse-face is-front">
+                  ${liveArt ? `<img src="${liveArt}" alt="实弹" draggable="false">` : '<span>实</span>'}
+                </div>
+                <div class="fx-reverse-face is-back">
+                  ${blankArt ? `<img src="${blankArt}" alt="空弹" draggable="false">` : '<span>空</span>'}
+                </div>
+              </div>
+            </div>
+            <div class="fx-reverse-hint">下一发 实 ↔ 空</div>
+          </div>`;
         resultText = '下一发实弹与空弹互换（全员可见）';
       } else if (id === 'bind') {
         stageHtml = `<div class="fx-icon fx-bind">跳过下回合</div>`;
