@@ -3012,6 +3012,14 @@ button.primary {
   line-height: 1.45;
 }
 
+.db-loadout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 12px 0 4px;
+}
+
 .db-kind-row {
   display: flex;
   gap: 12px;

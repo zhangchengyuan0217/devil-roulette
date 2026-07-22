@@ -406,12 +406,16 @@ function proceedRoundAfterSetup(state) {
   const alive = alivePlayers(state);
   const db = alive.find((p) => p.role === 'double_barrel');
   if (db && state.magazine.length > 0) {
+    const bullets = countTableBullets(state.magazine);
     state.awaiting = stampAwaitingExpiry(
       {
         type: 'double_barrel',
         actorNr: db.actorNr,
         name: db.name,
         magSize: state.magazine.length,
+        live: bullets.live,
+        blank: bullets.blank,
+        special: bullets.special,
         token: `db-${state.round}-${db.actorNr}-${Date.now()}`
       },
       'double_barrel'

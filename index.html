@@ -254,6 +254,7 @@
     <div class="db-panel">
       <div class="db-title">双管 · 声明</div>
       <div class="db-sub" id="dbDeclareSub">选择第几发，并声明为实弹或空弹</div>
+      <div class="db-loadout" id="dbDeclareLoadout"></div>
       <div class="ammo-pick-row" id="dbDeclareRow"></div>
       <div class="db-kind-row" id="dbKindRow">
         <button type="button" class="db-kind-btn" data-kind="live">实弹</button>
@@ -1806,6 +1807,17 @@
       }, 90);
     }
 
+    function dbDeclareLoadoutHtml(awaiting) {
+      const live = awaiting.live != null ? awaiting.live : (view && view.tableBullets ? view.tableBullets.live : 0);
+      const blank = awaiting.blank != null ? awaiting.blank : (view && view.tableBullets ? view.tableBullets.blank : 0);
+      const special = awaiting.special != null ? awaiting.special : (view && view.tableBullets ? view.tableBullets.special : 0);
+      return `
+        <span class="ammo-chip live"><i></i>实弹 ${live}</span>
+        <span class="ammo-chip blank"><i></i>空弹 ${blank}</span>
+        ${special ? `<span class="ammo-chip special"><i></i>特殊 ${special}</span>` : ''}
+      `;
+    }
+
     function refreshDbDeclareHint() {
       const hint = document.getElementById('dbDeclareHint');
       const conf = document.getElementById('dbDeclareConfirm');
@@ -1831,6 +1843,7 @@
     function closeDbDeclare() {
       document.getElementById('dbDeclareOverlay').classList.remove('show');
       document.getElementById('dbDeclareRow').innerHTML = '';
+      document.getElementById('dbDeclareLoadout').innerHTML = '';
       dbDeclareIndex = null;
       dbDeclareKind = null;
     }
@@ -1839,10 +1852,13 @@
       const mine = Number(awaiting.actorNr) === Number(myActorNr);
       const overlay = document.getElementById('dbDeclareOverlay');
       const sub = document.getElementById('dbDeclareSub');
+      const loadoutEl = document.getElementById('dbDeclareLoadout');
       const row = document.getElementById('dbDeclareRow');
       const actions = document.getElementById('dbDeclareActions');
       const kindRow = document.getElementById('dbKindRow');
       const count = awaiting.magSize || 0;
+
+      loadoutEl.innerHTML = dbDeclareLoadoutHtml(awaiting);
 
       if (!mine) {
         const sec = awaitingLeftSec(awaiting) ?? awaiting.seconds ?? 30;
