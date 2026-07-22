@@ -1234,8 +1234,34 @@ button.primary {
     inset 0 1px 0 rgba(255, 236, 190, 0.16);
 }
 
+/* 当前回合：抬层 + 角色卡更醒目的金边呼吸 */
+.hero-seat.turn {
+  z-index: 18;
+}
+
 .hero-seat.turn .role-card {
-  animation: turnPulse 1.6s ease-in-out infinite;
+  border-color: transparent;
+  animation: turnPulse 1.4s ease-in-out infinite;
+  filter: brightness(1.07) saturate(1.1);
+}
+
+.hero-seat.turn .seat-name {
+  color: #f0d78a;
+  font-weight: 700;
+  text-shadow: 0 0 12px rgba(212, 168, 87, 0.55);
+}
+
+.hero-seat.turn .seat-name::before {
+  content: "▶";
+  display: inline-block;
+  margin-right: 0.28em;
+  color: var(--gold, #d4a857);
+  font-size: 0.85em;
+  animation: turnCueBlink 1.4s ease-in-out infinite;
+}
+
+.hero-seat.turn .art {
+  box-shadow: inset 0 0 0 1px rgba(240, 215, 140, 0.35);
 }
 
 /* 仅鼠标等精确指针：悬停放大。触屏勿用 :hover，否则会 sticky 闪一下像刷新 */
@@ -1304,18 +1330,44 @@ button.primary {
 
 @keyframes turnPulse {
   0%, 100% {
+    transform: scale(1.05);
     box-shadow:
       0 0 0 1px #1a1208,
-      0 0 0 2px rgba(212, 168, 87, 0.4),
-      0 10px 20px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 236, 190, 0.12);
+      0 0 0 3px rgba(212, 168, 87, 0.7),
+      0 0 18px rgba(212, 168, 87, 0.35),
+      0 12px 26px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 236, 190, 0.18);
   }
   50% {
+    transform: scale(1.1);
     box-shadow:
       0 0 0 1px #1a1208,
-      0 0 0 3px rgba(212, 168, 87, 0.9),
-      0 14px 28px rgba(212, 168, 87, 0.25),
-      inset 0 1px 0 rgba(255, 236, 190, 0.16);
+      0 0 0 4px rgba(245, 220, 140, 0.95),
+      0 0 32px rgba(212, 168, 87, 0.65),
+      0 16px 34px rgba(212, 168, 87, 0.4),
+      inset 0 1px 0 rgba(255, 236, 190, 0.28);
+  }
+}
+
+@keyframes turnCueBlink {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-seat.turn .role-card {
+    animation: none;
+    transform: scale(1.06);
+    box-shadow:
+      0 0 0 1px #1a1208,
+      0 0 0 3px rgba(212, 168, 87, 0.85),
+      0 0 24px rgba(212, 168, 87, 0.45),
+      0 12px 26px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 236, 190, 0.2);
+  }
+  .hero-seat.turn .seat-name::before {
+    animation: none;
+    opacity: 1;
   }
 }
 
