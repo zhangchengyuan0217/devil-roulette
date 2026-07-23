@@ -370,6 +370,116 @@
     let lobbySyncTimer = null;
     let startResyncTimers = [];
     let lastAppliedStateSeq = -1;
+    let lastAppliedViewKey = '';
+    let lastSeatLayoutKey = '';
+
+    /** 动画收尾 setTimeout，开局/回大厅时必须清掉，避免上局回调污染本局 */
+    let animCloseTimers = [];
+
+    function scheduleAnimClose(fn, ms) {
+      const id = setTimeout(() => {
+        animCloseTimers = animCloseTimers.filter((t) => t !== id);
+        try {
+          fn();
+        } catch (e) {
+          console.warn(e);
+        }
+      }, ms);
+      animCloseTimers.push(id);
+      return id;
+    }
+
+    function clearAllAnimTimers() {
+      if (spinAnimTimer) {
+        clearInterval(spinAnimTimer);
+        spinAnimTimer = null;
+      }
+      if (ammoAnimTimer) {
+        clearInterval(ammoAnimTimer);
+        ammoAnimTimer = null;
+      }
+      if (diceAnimTimer) {
+        clearInterval(diceAnimTimer);
+        diceAnimTimer = null;
+      }
+      if (ejectAnimTimer) {
+        clearTimeout(ejectAnimTimer);
+        ejectAnimTimer = null;
+      }
+      if (shotRevealTimer) {
+        clearTimeout(shotRevealTimer);
+        shotRevealTimer = null;
+      }
+      if (itemFxTimer) {
+        clearTimeout(itemFxTimer);
+        itemFxTimer = null;
+      }
+      if (dbRevealTimer) {
+        clearTimeout(dbRevealTimer);
+        dbRevealTimer = null;
+      }
+      if (winAnimTimer) {
+        clearTimeout(winAnimTimer);
+        winAnimTimer = null;
+      }
+      if (snakeTimer) {
+        clearTimeout(snakeTimer);
+        snakeTimer = null;
+      }
+      if (snakeCountdownTimer) {
+        clearInterval(snakeCountdownTimer);
+        snakeCountdownTimer = null;
+      }
+      if (awaitingWatchdog) {
+        clearTimeout(awaitingWatchdog);
+        awaitingWatchdog = null;
+      }
+      if (interactiveCountdownTimer) {
+        clearInterval(interactiveCountdownTimer);
+        interactiveCountdownTimer = null;
+      }
+      animCloseTimers.forEach((id) => clearTimeout(id));
+      animCloseTimers = [];
+      snakeTimerToken = '';
+    }
+
+    function viewRenderKey(v) {
+      if (!v) return '';
+      const a = v.awaiting;
+      const aKey = a
+        ? `${a.type}:${a.token || ''}:${a.actorNr || ''}:${a.expiresAt || ''}`
+        : '';
+      const fx = v.effects || {};
+      const playersKey = (v.players || [])
+        .map((p) =>
+          [
+            p.actorNr,
+            p.hp,
+            p.alive ? 1 : 0,
+            p.handCount,
+            p.bulletproof ? 1 : 0,
+            p.skipNextTurn ? 1 : 0,
+            p.debtorNr != null ? p.debtorNr : '',
+            (p.hand && p.hand.join(',')) || ''
+          ].join(':')
+        )
+        .join('|');
+      return [
+        v.seq,
+        v.phase,
+        v.round,
+        v.currentTurn,
+        v.magazineCount,
+        fx.reverseNext ? 1 : 0,
+        fx.shotgunNext ? 1 : 0,
+        fx.sniperNext ? 1 : 0,
+        fx.doubleBarrelCall
+          ? `${fx.doubleBarrelCall.fromTop}:${fx.doubleBarrelCall.actual}:${fx.doubleBarrelCall.spent ? 1 : 0}`
+          : '',
+        aKey,
+        playersKey
+      ].join('~');
+    }
 
     function getStableUserId() {
       const key = 'devil_roulette_uid';
@@ -434,6 +544,9 @@
 
     function gameLog(msg) {
       logBox.innerHTML += `<div>${msg}</div>`;
+      while (logBox.childElementCount > 120) {
+        logBox.removeChild(logBox.firstChild);
+      }
       logBox.scrollTop = logBox.scrollHeight;
     }
 
@@ -735,30 +848,8 @@
 
     function exitOfflineSim() {
       clearBotTimer();
-      if (spinAnimTimer) {
-        clearInterval(spinAnimTimer);
-        spinAnimTimer = null;
-      }
-      if (ammoAnimTimer) {
-        clearInterval(ammoAnimTimer);
-        ammoAnimTimer = null;
-      }
-      if (diceAnimTimer) {
-        clearInterval(diceAnimTimer);
-        diceAnimTimer = null;
-      }
-      if (ejectAnimTimer) {
-        clearTimeout(ejectAnimTimer);
-        ejectAnimTimer = null;
-      }
-      if (shotRevealTimer) {
-        clearTimeout(shotRevealTimer);
-        shotRevealTimer = null;
-      }
-      if (itemFxTimer) {
-        clearTimeout(itemFxTimer);
-        itemFxTimer = null;
-      }
+      clearAllAnimTimers();
+      clearGameOverlays();
       lastSpinToken = '';
       lastAmmoToken = '';
       lastDiceToken = '';
@@ -766,6 +857,9 @@
       lastShotRevealToken = '';
       lastItemFxToken = '';
       lastWinKey = '';
+      lastAppliedViewKey = '';
+      lastSeatLayoutKey = '';
+      lastRenderedHandSig = '';
       offlineSim = false;
       gameState = null;
       fullStateBackup = null;
@@ -1021,6 +1115,15 @@
     }
 
     function applyView(v) {
+      const renderKey = viewRenderKey(v);
+      // 房主本地 apply + 自己收到 EVT_STATE 会打两次；内容未变则跳过
+      if (renderKey && renderKey === lastAppliedViewKey) {
+        if (v && (v.seq || v.seq === 0)) {
+          lastAppliedStateSeq = Math.max(lastAppliedStateSeq, Number(v.seq) || 0);
+        }
+        return;
+      }
+      lastAppliedViewKey = renderKey;
       const wasLobby = !view || view.phase === 'lobby';
       view = v;
       if (v && (v.seq || v.seq === 0)) {
@@ -1119,6 +1222,7 @@
     }
 
     function clearGameOverlays() {
+      clearAllAnimTimers();
       [
         'revealOverlay', 'firstSpinOverlay', 'ammoDrawOverlay', 'diceOverlay',
         'ejectOverlay', 'shotRevealOverlay', 'itemFxOverlay', 'swapPickOverlay', 'playerPickOverlay',
@@ -1129,10 +1233,6 @@
       });
       const shotCard = document.getElementById('shotRevealCard');
       if (shotCard) shotCard.classList.remove('ready', 'flip-mid', 'flip-done');
-      if (winAnimTimer) {
-        clearTimeout(winAnimTimer);
-        winAnimTimer = null;
-      }
       lastWinKey = '';
     }
 
@@ -1150,6 +1250,9 @@
       revealedOnce = false;
       lastRevealKey = '';
       lastAppliedStateSeq = -1;
+      lastAppliedViewKey = '';
+      lastSeatLayoutKey = '';
+      lastRenderedHandSig = '';
       joinInFlight = false;
       window.__rejoinPending = false;
       statusDiv.textContent = statusText || '已回到大厅';
@@ -1496,7 +1599,7 @@
             subEl.textContent = `第 ${awaiting.round} 轮装弹完成`;
             clearInterval(ammoAnimTimer);
             ammoAnimTimer = null;
-            setTimeout(() => {
+            scheduleAnimClose(() => {
               overlay.classList.remove('show', 'landed', 'phase-blank', 'phase-done');
               liveTile.classList.remove('land');
               blankTile.classList.remove('land');
@@ -1513,10 +1616,21 @@
     let audioUnlocked = false;
     const itemSfxPool = Object.create(null);
     let sharedAudioCtx = null;
+    const audioUnlockEvents = ['pointerdown', 'touchstart', 'click', 'keydown'];
+
+    function removeAudioUnlockListeners() {
+      audioUnlockEvents.forEach((ev) => {
+        document.removeEventListener(ev, onAudioUnlockGesture, true);
+      });
+    }
+
+    function onAudioUnlockGesture() {
+      unlockAudio();
+      if (audioUnlocked) removeAudioUnlockListeners();
+    }
 
     function unlockAudio() {
       if (audioUnlocked) return;
-      audioUnlocked = true;
       try {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (Ctx) {
@@ -1533,21 +1647,22 @@
         const p = warm.play();
         if (p && typeof p.then === 'function') {
           p.then(() => {
+            audioUnlocked = true;
+            removeAudioUnlockListeners();
             try {
               warm.pause();
               warm.currentTime = 0;
             } catch (_) {}
-          }).catch(() => {
-            audioUnlocked = false;
-          });
+          }).catch(() => {});
+        } else {
+          audioUnlocked = true;
+          removeAudioUnlockListeners();
         }
-      } catch (_) {
-        audioUnlocked = false;
-      }
+      } catch (_) {}
     }
 
-    ['pointerdown', 'touchstart', 'click', 'keydown'].forEach((ev) => {
-      document.addEventListener(ev, unlockAudio, { capture: true, passive: true });
+    audioUnlockEvents.forEach((ev) => {
+      document.addEventListener(ev, onAudioUnlockGesture, { capture: true, passive: true });
     });
 
     function getItemSfx(itemId) {
@@ -1568,21 +1683,12 @@
           sharedAudioCtx.resume().catch(() => {});
         }
         const audio = getItemSfx(itemId);
-        // 复用实例：iOS 对每次 new Audio().play() 更严格
         try {
           audio.pause();
           audio.currentTime = 0;
         } catch (_) {}
         const p = audio.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch(() => {
-            // 播放中冲突时再开一份兜底
-            try {
-              const fallback = new Audio(`assets/audio/tools/${itemId}.mp3`);
-              fallback.play().catch(() => {});
-            } catch (_) {}
-          });
-        }
+        if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch (_) {}
     }
 
@@ -1661,7 +1767,7 @@
             ? `掷出 ${target}（奇数）→ ${who} 失去 1 点血量`
             : `掷出 ${target}（偶数）→ ${who} 回复 2 点血量`;
           subEl.textContent = `效果发送：${who}`;
-          setTimeout(() => {
+          scheduleAnimClose(() => {
             overlay.classList.remove('show', 'landed', 'odd', 'even');
             cube.classList.remove('land');
             castEl.innerHTML = '';
@@ -2314,7 +2420,7 @@
           cardEl.classList.add('land');
           overlay.classList.add('landed');
           resultEl.textContent = `${winner.name} 先手！`;
-          setTimeout(() => {
+          scheduleAnimClose(() => {
             cardEl.classList.remove('land');
             overlay.classList.remove('show', 'landed');
             finishFirstPlayerSpin();
@@ -2892,14 +2998,69 @@
         });
       }
 
+      function seatPlayerSig(p, myTurn, curNr, fxActors) {
+        if (!p) return 'empty';
+        const isDebtor = (view.players || []).some(
+          (x) => x.debtorNr != null && Number(x.debtorNr) === Number(p.actorNr)
+        );
+        const isCaster = fxActors.caster != null && Number(p.actorNr) === fxActors.caster;
+        const isFxTarget = fxActors.targets.some((nr) => Number(nr) === Number(p.actorNr));
+        return [
+          p.actorNr,
+          p.hp,
+          p.alive ? 1 : 0,
+          p.handCount,
+          p.role,
+          p.name,
+          p.team != null ? p.team : '',
+          p.bulletproof ? 1 : 0,
+          p.skipNextTurn ? 1 : 0,
+          isDebtor ? 1 : 0,
+          Number(p.actorNr) === Number(curNr) ? 1 : 0,
+          myTurn ? 1 : 0,
+          isCaster ? 1 : 0,
+          isFxTarget ? 1 : 0
+        ].join(':');
+      }
+
       function paintSlot(el, player, teamClass, tag) {
         el.classList.remove('team-red', 'team-blue');
         if (teamClass) el.classList.add(teamClass);
         el.dataset.tag = tag || '';
         if (!player) {
+          el.dataset.seatSig = 'empty';
           el.innerHTML = '';
           return;
         }
+        const sig = `${teamClass || ''}|${tag || ''}|${seatPlayerSig(player, myTurn, curNr, fxActors)}`;
+        if (el.dataset.seatSig === sig && el.querySelector('.hero-seat')) {
+          // 选中态由 syncSeatSelectionUi 单独维护，避免整卡重绘
+          return;
+        }
+        el.dataset.seatSig = sig;
+        el.innerHTML = seatHtml(player);
+        bindSeats(el);
+      }
+
+      const layoutKey = `${fourPlayer ? '4' : duel ? '2' : trio ? '3' : 'x'}|${view.mode || ''}|${myActorNr}`;
+      if (layoutKey !== lastSeatLayoutKey) {
+        lastSeatLayoutKey = layoutKey;
+        ['seatTop', 'seatBottom', 'seatLeft', 'seatRight', 'mySeat', 'opponents'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) delete el.dataset.seatSig;
+        });
+      }
+
+      function paintMySeat(player) {
+        const el = document.getElementById('mySeat');
+        if (!player) {
+          el.dataset.seatSig = 'empty';
+          el.innerHTML = '';
+          return;
+        }
+        const sig = `me|${seatPlayerSig(player, myTurn, curNr, fxActors)}`;
+        if (el.dataset.seatSig === sig && el.querySelector('.hero-seat')) return;
+        el.dataset.seatSig = sig;
         el.innerHTML = seatHtml(player);
         bindSeats(el);
       }
@@ -2936,8 +3097,7 @@
         paintSlot(document.getElementById('seatRight'), rightP, '', foeTagR);
 
         document.getElementById('opponents').innerHTML = '';
-        document.getElementById('mySeat').innerHTML = seatHtml(me);
-        bindSeats(document.getElementById('mySeat'));
+        paintMySeat(me);
       } else if (duel && me) {
         const foe = view.players.find((p) => p.actorNr !== me.actorNr) || null;
         paintSlot(document.getElementById('seatTop'), foe, '', '对手');
@@ -2945,8 +3105,7 @@
         paintSlot(document.getElementById('seatLeft'), null, '', '');
         paintSlot(document.getElementById('seatRight'), null, '', '');
         document.getElementById('opponents').innerHTML = '';
-        document.getElementById('mySeat').innerHTML = seatHtml(me);
-        bindSeats(document.getElementById('mySeat'));
+        paintMySeat(me);
       } else if (trio && me) {
         const others = view.players
           .filter((p) => p.actorNr !== me.actorNr)
@@ -2956,20 +3115,24 @@
         paintSlot(document.getElementById('seatLeft'), others[0] || null, '', '对手');
         paintSlot(document.getElementById('seatRight'), others[1] || null, '', '对手');
         document.getElementById('opponents').innerHTML = '';
-        document.getElementById('mySeat').innerHTML = seatHtml(me);
-        bindSeats(document.getElementById('mySeat'));
+        paintMySeat(me);
       } else {
         ['seatTop', 'seatBottom', 'seatLeft', 'seatRight'].forEach((id) => {
           const el = document.getElementById(id);
           el.innerHTML = '';
           el.classList.remove('team-red', 'team-blue');
           el.dataset.tag = '';
+          delete el.dataset.seatSig;
         });
         const others = view.players.filter((p) => p.actorNr !== myActorNr);
-        document.getElementById('opponents').innerHTML = others.map((p) => seatHtml(p)).join('');
-        if (me) document.getElementById('mySeat').innerHTML = seatHtml(me);
-        bindSeats(document.getElementById('opponents'));
-        bindSeats(document.getElementById('mySeat'));
+        const oppEl = document.getElementById('opponents');
+        const oppSig = others.map((p) => seatPlayerSig(p, myTurn, curNr, fxActors)).join('|');
+        if (oppEl.dataset.seatSig !== oppSig) {
+          oppEl.dataset.seatSig = oppSig;
+          oppEl.innerHTML = others.map((p) => seatHtml(p)).join('');
+          bindSeats(oppEl);
+        }
+        paintMySeat(me);
       }
 
       // 手牌扇形（炉石式：轻抬 + 独立大图预览；点选上移；普通道具单选，铁玫瑰最多 2 张）
@@ -3155,6 +3318,11 @@
       lastItemFxToken = '';
       lastWinKey = '';
       lastAppliedStateSeq = -1;
+      lastAppliedViewKey = '';
+      lastSeatLayoutKey = '';
+      lastRenderedHandSig = '';
+      clearAllAnimTimers();
+      clearGameOverlays();
       initPlayers(gameState, actors, mode);
       if (mode === 'team') {
         gameState.players.forEach((p, i) => { p.team = i % 2; });
@@ -3310,8 +3478,10 @@
         if (code === EVT_ACTION) {
           hostProcessAction(actorNr, content);
         } else if (code === EVT_STATE) {
-          if (content && content.seq != null) {
-            lastAppliedStateSeq = Math.max(lastAppliedStateSeq, Number(content.seq) || 0);
+          const seq = Number(content && content.seq) || 0;
+          // 丢弃过期包，避免旧状态覆盖新画面、重复重绘
+          if (seq > 0 && seq < lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
+            return;
           }
           applyView(content);
         } else if (code === EVT_FULL) {
