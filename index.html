@@ -1509,12 +1509,80 @@
       }, 85);
     }
 
+    // 移动端/iPad：须先在用户手势里「解锁」音频，之后动画回调里才能播
+    let audioUnlocked = false;
+    const itemSfxPool = Object.create(null);
+    let sharedAudioCtx = null;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      audioUnlocked = true;
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+          if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+          if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume().catch(() => {});
+        }
+      } catch (_) {}
+      try {
+        // 静音短音解锁 HTMLAudio（iOS Safari）
+        const warm = new Audio(
+          'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
+        );
+        warm.volume = 0.01;
+        const p = warm.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => {
+            try {
+              warm.pause();
+              warm.currentTime = 0;
+            } catch (_) {}
+          }).catch(() => {
+            audioUnlocked = false;
+          });
+        }
+      } catch (_) {
+        audioUnlocked = false;
+      }
+    }
+
+    ['pointerdown', 'touchstart', 'click', 'keydown'].forEach((ev) => {
+      document.addEventListener(ev, unlockAudio, { capture: true, passive: true });
+    });
+
+    function getItemSfx(itemId) {
+      let audio = itemSfxPool[itemId];
+      if (!audio) {
+        audio = new Audio(`assets/audio/tools/${itemId}.mp3`);
+        audio.preload = 'auto';
+        itemSfxPool[itemId] = audio;
+      }
+      return audio;
+    }
+
     function playItemSfx(itemId) {
       if (!itemId || !ITEMS[itemId]) return;
+      unlockAudio();
       try {
-        const audio = new Audio(`assets/audio/tools/${itemId}.mp3`);
+        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+          sharedAudioCtx.resume().catch(() => {});
+        }
+        const audio = getItemSfx(itemId);
+        // 复用实例：iOS 对每次 new Audio().play() 更严格
+        try {
+          audio.pause();
+          audio.currentTime = 0;
+        } catch (_) {}
         const p = audio.play();
-        if (p && typeof p.catch === 'function') p.catch(() => {});
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {
+            // 播放中冲突时再开一份兜底
+            try {
+              const fallback = new Audio(`assets/audio/tools/${itemId}.mp3`);
+              fallback.play().catch(() => {});
+            } catch (_) {}
+          });
+        }
       } catch (_) {}
     }
 
@@ -3444,6 +3512,7 @@
     }
 
     document.getElementById('useItemBtn').onclick = () => {
+      unlockAudio();
       if (selectedHand.length !== 1) return;
       const itemIndex = selectedHand[0];
       const itemId = view.me.hand[itemIndex];
