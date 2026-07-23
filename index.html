@@ -1280,7 +1280,7 @@
       const bindMark = isBound
         ? `<div class="bind-mark" title="已被捆绑" aria-label="已被捆绑"><img src="assets/svgs/bind.svg" alt="" draggable="false"></div>`
         : '';
-      const hasVest = !!(p.bulletproof);
+      const hasVest = !!(p.bulletproof && p.alive !== false);
       const vestMark = hasVest
         ? `<div class="vest-mark" title="防弹衣" aria-label="防弹衣"><img src="assets/svgs/vest.svg" alt="" draggable="false"></div>`
         : '';
@@ -2721,7 +2721,7 @@
       if (view.effects.reverseNext) pills.push('<span class="pill">反转挂起</span>');
       if (view.effects.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
       (view.players || []).forEach((p) => {
-        if (!p.bulletproof) return;
+        if (!p.bulletproof || !p.alive) return;
         pills.push(`<span class="pill vest-pill">防弹 · ${p.name}</span>`);
       });
       if (dbCall) {

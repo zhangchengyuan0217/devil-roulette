@@ -681,10 +681,12 @@ function applyDamage(state, target, amount, sourceMsg, ctx) {
     if (v.hp <= 0) {
       v.hp = 0;
       v.alive = false;
+      v.bulletproof = false;
       logState(state, `${v.name} 出局！`);
     }
   });
-  if (pairIdx >= 0) {
+  // 防弹衣完全抵消则未「受到伤害」，连锁不解除
+  if (pairIdx >= 0 && damaged.length > 0) {
     removeLinkPairAt(state, pairIdx);
     logState(state, victims.length > 1 ? '连锁已触发并解除。' : '连锁因受到伤害而解除。');
   }
@@ -896,11 +898,12 @@ function continueAfterShotReveal(state) {
         if (v.hp <= 0) {
           v.hp = 0;
           v.alive = false;
+          v.bulletproof = false;
           logState(state, `${v.name} 出局！`);
         }
       });
-      // 任意被扣血者所在连锁一律解除；防弹抵消也视为本次实弹已结算，解除连锁
-      victims.forEach((v) => breakLinkAfterAnyDamage(state, v.actorNr));
+      // 仅对实际扣血者解除连锁；全员被防弹衣抵消则保留连锁
+      damaged.forEach((v) => breakLinkAfterAnyDamage(state, v.actorNr));
       tryMarkScentDebt(state, shooter.actorNr, damaged);
       checkWin(state);
     } else if (pending.scentDebtBonus) {
@@ -913,6 +916,7 @@ function continueAfterShotReveal(state) {
         if (target.hp <= 0) {
           target.hp = 0;
           target.alive = false;
+          target.bulletproof = false;
           logState(state, `${target.name} 出局！`);
         }
         checkWin(state);
