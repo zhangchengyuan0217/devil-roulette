@@ -1170,6 +1170,8 @@ function continueAfterPainkillerDice(state) {
   else heal(state, player, 2);
 
   if (state.phase === 'ended') return { ok: true };
+  // 出局后必须交回合，否则死者仍为当前行动者，可点开枪并卡死
+  if (!player.alive) moveToNextPlayer(state);
   if (offerSnake) offerRattlesnake(state, player, 'painkiller', {});
   if (!state.awaiting) tryStartHandDiscard(state);
   return { ok: true };
