@@ -84,6 +84,11 @@ const ITEMS = {
     art: 'assets/tools/shotgun.jpg',
     desc: '若下一发为实弹，则开枪时造成的伤害改为造成2点伤害。'
   },
+  vest: {
+    id: 'vest', name: '防弹衣', glyph: '甲', hue: 205,
+    art: 'assets/tools/vest.jpg',
+    desc: '抵御你受到的下一次实弹伤害（含霰弹/追香加伤）。特殊弹、止痛药等非实弹伤害无法抵消。'
+  },
   swap: {
     id: 'swap', name: '换弹', glyph: '换', hue: 160,
     art: 'assets/tools/swap.jpg',

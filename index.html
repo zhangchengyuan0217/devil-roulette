@@ -648,7 +648,7 @@
           payload.targets = foes.slice(0, 1).map((p) => p.actorNr);
         }
         // 跳过需要复杂选择且可能无效的牌，直接开枪更稳
-        if (!payload._skip && ['bind', 'steal', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'reverse', 'peek_top'].includes(id)) {
+        if (!payload._skip && ['bind', 'steal', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'vest', 'reverse', 'peek_top'].includes(id)) {
           handleAction(gameState, curNr, { type: 'use_item', itemIndex: idx, payload });
           refreshLocalView();
           return;
@@ -1280,12 +1280,17 @@
       const bindMark = isBound
         ? `<div class="bind-mark" title="已被捆绑" aria-label="已被捆绑"><img src="assets/svgs/bind.svg" alt="" draggable="false"></div>`
         : '';
+      const hasVest = !!(p.bulletproof);
+      const vestMark = hasVest
+        ? `<div class="vest-mark" title="防弹衣" aria-label="防弹衣"><img src="assets/svgs/vest.svg" alt="" draggable="false"></div>`
+        : '';
       const titleBits = [role.name];
       if (isDebtor) titleBits.push('债务人');
       if (isBound) titleBits.push('已被捆绑');
+      if (hasVest) titleBits.push('防弹衣');
       return `
-        <div class="role-card${role.art ? ' has-art' : ''}${lowCls}${isDebtor ? ' has-debt' : ''}${isBound ? ' has-bind' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${titleBits.join(' · ')}">
-          ${debtMark}${bindMark}
+        <div class="role-card${role.art ? ' has-art' : ''}${lowCls}${isDebtor ? ' has-debt' : ''}${isBound ? ' has-bind' : ''}${hasVest ? ' has-vest' : ''}" style="--hue:${role.hue}" data-role="${p.role}" data-actor="${p.actorNr}" title="${titleBits.join(' · ')}">
+          ${debtMark}${bindMark}${vestMark}
           <div class="art">${art}<span class="role-name">${role.name}</span></div>
           <div class="body">
             ${hpPipsHtml(p.hp)}
@@ -1950,6 +1955,9 @@
       } else if (id === 'shotgun') {
         stageHtml = `<div class="fx-icon fx-shotgun">伤害 ×2</div>`;
         resultText = '下一发实弹伤害 ×2（全员可见）';
+      } else if (id === 'vest') {
+        stageHtml = `<div class="fx-icon fx-vest">防弹</div>`;
+        resultText = `${awaiting.targetName || who} 获得防弹衣：抵消下一次实弹伤害`;
       } else if (id === 'swap') {
         stageHtml = `<div class="fx-swap"><span class="fx-shell unknown"><span>${awaiting.swapFrom || '?'}</span></span><span class="fx-swap-arrow">⇄</span><span class="fx-shell unknown"><span>${awaiting.swapTo || '?'}</span></span></div>`;
         resultText = `${who} 交换第 ${awaiting.swapFrom} 发 ↔ 第 ${awaiting.swapTo} 发`;
@@ -2712,6 +2720,10 @@
       const pills = [];
       if (view.effects.reverseNext) pills.push('<span class="pill">反转挂起</span>');
       if (view.effects.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
+      (view.players || []).forEach((p) => {
+        if (!p.bulletproof) return;
+        pills.push(`<span class="pill vest-pill">防弹 · ${p.name}</span>`);
+      });
       if (dbCall) {
         pills.push(
           `<span class="pill db-call${dbCall.success ? ' ok' : ' bad'}">双管公示 · 第 ${dbCall.fromTop} 发【${bulletLabel(dbCall.actual)}】</span>`

@@ -830,6 +830,11 @@ button.primary {
   color: #f0e0b8;
 }
 
+.pill.vest-pill {
+  border-color: rgba(120, 170, 230, 0.5);
+  color: #b8d6f5;
+}
+
 .pill.db-call.ok {
   border-color: rgba(111, 191, 138, 0.5);
   color: #b8e6c6;
@@ -1973,9 +1978,61 @@ button.primary {
     contrast(1.08);
 }
 
-.role-card.has-bind.has-debt .debt-mark {
-  right: auto;
-  left: -6px;
+/* 防弹衣：角色卡右下角，避开债务人(左上)、捆绑(右上)、手牌数(左下) */
+.vest-mark {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  z-index: 6;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 236, 170, 0.4), transparent 55%),
+    linear-gradient(160deg, #3a3220, #1a1410 60%, #0e0c08);
+  border: 1.5px solid rgba(252, 207, 42, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(40, 28, 8, 0.85),
+    0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  animation: debtMarkIn 0.35s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.vest-mark img {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.role-card.has-vest {
+  box-shadow:
+    0 0 0 1px #1a1208,
+    0 0 0 2px rgba(232, 180, 60, 0.5),
+    0 8px 18px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(252, 207, 42, 0.24),
+    inset 0 1px 0 rgba(255, 236, 190, 0.1);
+}
+
+/* 多状态同时存在时叠一层描边，避免互相盖掉 */
+.role-card.has-debt.has-vest {
+  box-shadow:
+    0 0 0 1px #1a1208,
+    0 0 0 2px rgba(184, 58, 50, 0.5),
+    0 0 0 4px rgba(232, 180, 60, 0.4),
+    0 8px 18px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 236, 190, 0.1);
+}
+
+.role-card.has-bind.has-vest:not(.has-debt) {
+  box-shadow:
+    0 0 0 1px #1a1208,
+    0 0 0 2px rgba(232, 180, 60, 0.5),
+    0 8px 18px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(252, 207, 42, 0.2),
+    inset 0 1px 0 rgba(255, 236, 190, 0.1);
 }
 
 @keyframes debtMarkIn {
@@ -1998,6 +2055,16 @@ button.primary {
   .bind-mark {
     width: 28px;
     height: 28px;
+  }
+  .vest-mark {
+    width: 24px;
+    height: 24px;
+    right: -3px;
+    bottom: -3px;
+  }
+  .vest-mark img {
+    width: 16px;
+    height: 16px;
   }
 }
 
@@ -3200,6 +3267,7 @@ button.primary {
 
 .fx-draw { color: #e8c57a; font-size: 2rem; }
 .fx-shotgun { color: #ffb08a; }
+.fx-vest { color: #9ec4ef; }
 .fx-reverse { font-size: 1.2rem; letter-spacing: 0.08em; color: #7ec8e3; }
 
 .fx-reverse-stage {
@@ -4723,6 +4791,18 @@ button.primary {
   .bind-mark {
     width: 42px;
     height: 42px;
+  }
+
+  .vest-mark {
+    width: 34px;
+    height: 34px;
+    right: -4px;
+    bottom: -4px;
+  }
+
+  .vest-mark img {
+    width: 22px;
+    height: 22px;
   }
 
   .reveal-card .role-card {

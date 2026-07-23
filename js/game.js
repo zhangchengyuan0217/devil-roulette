@@ -140,6 +140,7 @@ function initPlayers(state, actors, mode) {
     alive: true,
     team: mode === 'team' ? (i % 2) : i, // team 0/1 for 2v2; ffa unique
     skipNextTurn: false,
+    bulletproof: false,
     debtorNr: null,
     scentMarkedThisRound: false
   }));
@@ -651,8 +652,16 @@ function tryMarkScentDebt(state, shooterNr, victims) {
   });
 }
 
+/** 防弹衣：抵消本次实弹伤害（仅实弹结算调用） */
+function absorbLiveBulletWithVest(state, player) {
+  if (!player || !player.bulletproof) return false;
+  player.bulletproof = false;
+  logState(state, `${player.name} 的防弹衣抵消了本次实弹伤害。`);
+  return true;
+}
+
 function applyDamage(state, target, amount, sourceMsg, ctx) {
-  if (!target.alive || amount <= 0) return;
+  if (!target.alive || amount <= 0) return [];
   const pairIdx = findLinkPairIndex(state, target.actorNr);
   const pair = pairIdx >= 0 ? state.effects.linkedPairs[pairIdx].slice() : null;
   const victims = [target];
@@ -663,8 +672,11 @@ function applyDamage(state, target, amount, sourceMsg, ctx) {
       if (p && p.alive) victims.push(p);
     });
   }
+  const damaged = [];
   victims.forEach((v) => {
+    if (ctx && ctx.liveBullet && absorbLiveBulletWithVest(state, v)) return;
     v.hp -= amount;
+    damaged.push(v);
     logState(state, `${sourceMsg || ''}${v.name} 受到 ${amount} 点伤害（剩余 ${Math.max(v.hp, 0)}）。`);
     if (v.hp <= 0) {
       v.hp = 0;
@@ -677,9 +689,10 @@ function applyDamage(state, target, amount, sourceMsg, ctx) {
     logState(state, victims.length > 1 ? '连锁已触发并解除。' : '连锁因受到伤害而解除。');
   }
   if (ctx && ctx.shotBy != null) {
-    tryMarkScentDebt(state, ctx.shotBy, victims);
+    tryMarkScentDebt(state, ctx.shotBy, damaged);
   }
   checkWin(state);
+  return damaged;
 }
 
 /** 解除该玩家所在连锁（用于夜枭等已批量结算伤害后的清理） */
@@ -874,8 +887,11 @@ function continueAfterShotReveal(state) {
           }
         });
       });
+      const damaged = [];
       victims.forEach((v) => {
+        if (absorbLiveBulletWithVest(state, v)) return;
         v.hp -= amount;
+        damaged.push(v);
         logState(state, `夜枭实弹：${v.name} -${amount}（剩余 ${Math.max(v.hp, 0)}）`);
         if (v.hp <= 0) {
           v.hp = 0;
@@ -883,14 +899,15 @@ function continueAfterShotReveal(state) {
           logState(state, `${v.name} 出局！`);
         }
       });
-      // 任意被扣血者所在连锁一律解除
+      // 任意被扣血者所在连锁一律解除；防弹抵消也视为本次实弹已结算，解除连锁
       victims.forEach((v) => breakLinkAfterAnyDamage(state, v.actorNr));
-      tryMarkScentDebt(state, shooter.actorNr, victims);
+      tryMarkScentDebt(state, shooter.actorNr, damaged);
       checkWin(state);
     } else if (pending.scentDebtBonus) {
-      // 基础 1 点走连锁；讨债 +1 只打债务人本人
-      applyDamage(state, target, 1, '', { shotBy: shooter.actorNr });
-      if (target.alive) {
+      // 基础 1 点走连锁；讨债 +1 只打债务人本人（防弹衣抵消则整次不加伤）
+      const damaged = applyDamage(state, target, 1, '', { shotBy: shooter.actorNr, liveBullet: true });
+      const primaryHit = damaged.some((v) => Number(v.actorNr) === Number(target.actorNr));
+      if (primaryHit && target.alive) {
         target.hp -= 1;
         logState(state, `追香讨债追加：${target.name} 再受到 1 点伤害（剩余 ${Math.max(target.hp, 0)}）。`);
         if (target.hp <= 0) {
@@ -901,7 +918,7 @@ function continueAfterShotReveal(state) {
         checkWin(state);
       }
     } else {
-      applyDamage(state, target, dmg, '', { shotBy: shooter.actorNr });
+      applyDamage(state, target, dmg, '', { shotBy: shooter.actorNr, liveBullet: true });
     }
   } else if (resolved === BULLET.BLANK) {
     if (toSelf) {
@@ -1301,6 +1318,14 @@ function applyItemEffect(state, player, itemId, payload) {
       logState(state, '霰弹枪已挂起：下一发若为实弹则伤害×2。');
       startItemFx(state, player, itemId, payload, {});
       break;
+    case 'vest':
+      player.bulletproof = true;
+      logState(state, `${player.name} 穿上防弹衣：可抵消下一次实弹伤害。`);
+      startItemFx(state, player, itemId, payload, {
+        targetActorNr: player.actorNr,
+        targetName: player.name
+      });
+      break;
     case 'swap': {
       const i = payload.i | 0;
       const j = payload.j | 0;
@@ -1611,6 +1636,7 @@ function publicView(state, viewerActorNr) {
       alive: p.alive,
       team: p.team,
       skipNextTurn: p.skipNextTurn,
+      bulletproof: !!p.bulletproof,
       debtorNr: p.debtorNr != null ? Number(p.debtorNr) : null,
       handCount: p.hand.length,
       hand: Number(p.actorNr) === Number(viewerActorNr) ? p.hand.slice() : null
