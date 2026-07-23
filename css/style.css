@@ -747,6 +747,99 @@ button.primary {
   font-weight: 700;
 }
 
+.cylinder .shell.live,
+.cylinder .shell.blank,
+.cylinder .shell.special {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  border-color: rgba(0, 0, 0, 0.4);
+}
+
+.cylinder .shell.live {
+  background: linear-gradient(180deg, #e07068, #9a2f28);
+  color: #fff5f2;
+}
+
+.cylinder .shell.blank {
+  background: linear-gradient(180deg, #ddd0b4, #9a8c72);
+  color: #2a2418;
+}
+
+.cylinder .shell.special {
+  background: linear-gradient(180deg, #e0c078, #5aa8c8);
+  color: #1a1410;
+}
+
+.cyl-shell-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.cyl-shell-wrap.db-mark {
+  position: relative;
+  transform: translateY(-2px);
+}
+
+.cyl-shell-wrap.db-mark .shell {
+  width: 22px;
+  height: 32px;
+  box-shadow:
+    0 0 0 2px rgba(232, 197, 122, 0.85),
+    0 0 10px rgba(232, 197, 122, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.cyl-shell-wrap.db-mark.bad .shell {
+  box-shadow:
+    0 0 0 2px rgba(212, 84, 74, 0.85),
+    0 0 10px rgba(212, 84, 74, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.cyl-shell-ord {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: rgba(240, 230, 216, 0.7);
+  line-height: 1;
+}
+
+.cyl-shell-wrap.db-mark .cyl-shell-ord {
+  color: #e8c57a;
+}
+
+.cyl-shell-tag {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #e8c57a;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.cyl-shell-wrap.db-mark.bad .cyl-shell-tag {
+  color: #ffb0a8;
+}
+
+.pill.db-call {
+  border-color: rgba(232, 197, 122, 0.45);
+  color: #f0e0b8;
+}
+
+.pill.db-call.ok {
+  border-color: rgba(111, 191, 138, 0.5);
+  color: #b8e6c6;
+}
+
+.pill.db-call.bad {
+  border-color: rgba(212, 84, 74, 0.5);
+  color: #ffb0a8;
+}
+
 .felt-status {
   font-size: 0.78rem;
   color: #dce8df;

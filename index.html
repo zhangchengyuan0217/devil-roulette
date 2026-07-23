@@ -2678,19 +2678,45 @@
       `;
 
       const cyl = document.getElementById('cylinder');
-      cyl.innerHTML = Array.from({ length: view.magazineCount }, () =>
-        '<div class="shell unknown"></div>'
-      ).join('');
+      const dbCall = view.effects && view.effects.doubleBarrelCall;
+      // 有双管公示时：转轮按「第1发→第N发」标出发数；未打出的声明弹正面朝上
+      cyl.innerHTML = Array.from({ length: view.magazineCount }, (_, i) => {
+        const fromTop = i + 1;
+        const isDb = dbCall && Number(dbCall.fromTop) === fromTop;
+        if (!dbCall) return '<div class="shell unknown"></div>';
+        if (!isDb) {
+          return `<div class="cyl-shell-wrap">
+            <div class="shell unknown"></div>
+            <span class="cyl-shell-ord">${fromTop}</span>
+          </div>`;
+        }
+        const actual = dbCall.actual;
+        const cls = actual === 'live' ? 'live' : actual === 'blank' ? 'blank' : 'special';
+        const mark = actual === 'live' ? '实' : actual === 'blank' ? '空' : '特';
+        const tip = `双管公示：第 ${fromTop} 发是【${bulletLabel(actual)}】（声明【${bulletLabel(dbCall.declared)}】${dbCall.success ? '成功' : '失败'}）`;
+        return `<div class="cyl-shell-wrap db-mark${dbCall.success ? ' ok' : ' bad'}" title="${tip}">
+          <div class="shell ${cls}">${mark}</div>
+          <span class="cyl-shell-ord">${fromTop}</span>
+          <span class="cyl-shell-tag">公示</span>
+        </div>`;
+      }).join('');
       document.getElementById('feltStatus').textContent =
         view.awaiting && view.awaiting.type === 'rattlesnake'
           ? `响尾蛇抉择中：是否将【${view.awaiting.itemName || '道具'}】复制到手牌…`
-          : view.magazineCount
-            ? `转轮剩余 ${view.magazineCount} 发（背面朝上）`
-            : '本轮弹药已打空';
+          : dbCall
+            ? `转轮剩余 ${view.magazineCount} 发 · 第 ${dbCall.fromTop} 发双管公示中`
+            : view.magazineCount
+              ? `转轮剩余 ${view.magazineCount} 发（背面朝上）`
+              : '本轮弹药已打空';
 
       const pills = [];
       if (view.effects.reverseNext) pills.push('<span class="pill">反转挂起</span>');
       if (view.effects.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
+      if (dbCall) {
+        pills.push(
+          `<span class="pill db-call${dbCall.success ? ' ok' : ' bad'}">双管公示 · 第 ${dbCall.fromTop} 发【${bulletLabel(dbCall.actual)}】</span>`
+        );
+      }
       if (view.effects.linkedPairs && view.effects.linkedPairs.length) {
         const pairText = view.effects.linkedPairs.map((pair) => {
           const names = pair.map((nr) => {

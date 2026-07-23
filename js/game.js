@@ -91,7 +91,9 @@ function createEmptyState() {
       shotgunNext: false,
       // 连锁配对：每组 1～2 人；每人同时只能出现在一组中
       linkedPairs: [], // Array<actorNr[]>
-      doubleItemBonus: {} // actorNr -> extra draws next round
+      doubleItemBonus: {}, // actorNr -> extra draws next round
+      // 双管声明公示：fromBottom 为弹匣底部起 0-based，随换弹跟随实体弹
+      doubleBarrelCall: null
     },
     awaiting: null, // { type, actorNr, ... }
     lastItemForSnake: null,
@@ -350,6 +352,7 @@ function startRound(state) {
   state.round += 1;
   state.effects.reverseNext = false;
   state.effects.shotgunNext = false;
+  state.effects.doubleBarrelCall = null;
   state.rattlesnakeUsedThisRound = {};
   state.lastItemForSnake = null;
   state.rattlesnakeQueue = [];
@@ -1305,6 +1308,11 @@ function applyItemEffect(state, player, itemId, payload) {
       const b = state.magazine.length - 1 - j;
       if (a >= 0 && b >= 0 && a < state.magazine.length && b < state.magazine.length) {
         [state.magazine[a], state.magazine[b]] = [state.magazine[b], state.magazine[a]];
+        const call = state.effects.doubleBarrelCall;
+        if (call) {
+          if (call.fromBottom === a) call.fromBottom = b;
+          else if (call.fromBottom === b) call.fromBottom = a;
+        }
         logState(state, `${player.name} 交换了第 ${i + 1} 发与第 ${j + 1} 发。`);
         startItemFx(state, player, itemId, payload, { swapFrom: i + 1, swapTo: j + 1 });
       }
@@ -1405,6 +1413,16 @@ function declareDoubleBarrel(state, actorNr, index1Based, kind) {
     state.effects.doubleItemBonus[p.actorNr] = (state.effects.doubleItemBonus[p.actorNr] || 0) + 2;
   });
   logState(state, `${success ? '己方' : '对手'} 下轮将额外获得双倍道具（+2）。`);
+
+  // 公示到牌桌：该发弹药正面朝上，全员可见
+  state.effects.doubleBarrelCall = {
+    fromBottom: state.magazine.length - index1Based,
+    index: index1Based,
+    declared: kind,
+    actual,
+    success,
+    name: player.name
+  };
 
   state.awaiting = stampAwaitingExpiry(
     {
@@ -1544,6 +1562,23 @@ function countTableBullets(magazine) {
   return c;
 }
 
+function viewDoubleBarrelCall(state) {
+  const c = state.effects && state.effects.doubleBarrelCall;
+  if (!c) return null;
+  const mag = state.magazine.length;
+  // 已打出 / 退弹则不再公示
+  if (c.fromBottom < 0 || c.fromBottom >= mag) return null;
+  const actual = state.magazine[c.fromBottom];
+  return {
+    index: c.index,
+    declared: c.declared,
+    actual,
+    success: actual === c.declared,
+    name: c.name || '',
+    fromTop: mag - c.fromBottom
+  };
+}
+
 function publicView(state, viewerActorNr) {
   const viewer = getPlayer(state, viewerActorNr);
   return {
@@ -1559,7 +1594,8 @@ function publicView(state, viewerActorNr) {
       shotgunNext: state.effects.shotgunNext,
       linked: flattenLinked(state),
       linkedPairs: state.effects.linkedPairs.map((pair) => pair.slice()),
-      doubleItemBonus: state.effects.doubleItemBonus
+      doubleItemBonus: state.effects.doubleItemBonus,
+      doubleBarrelCall: viewDoubleBarrelCall(state)
     },
     awaiting: viewAwaiting(state, viewerActorNr),
     winner: state.winner,
