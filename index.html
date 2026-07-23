@@ -1512,7 +1512,7 @@
     function playItemSfx(itemId) {
       if (!itemId || !ITEMS[itemId]) return;
       try {
-        const audio = new Audio(`assets/audio/${itemId}.mp3`);
+        const audio = new Audio(`assets/audio/tools/${itemId}.mp3`);
         const p = audio.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch (_) {}
