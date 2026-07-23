@@ -89,6 +89,7 @@ function createEmptyState() {
     effects: {
       reverseNext: false,
       shotgunNext: false,
+      sniperNext: false,
       // 连锁配对：每组 1～2 人；每人同时只能出现在一组中
       linkedPairs: [], // Array<actorNr[]>
       doubleItemBonus: {}, // actorNr -> extra draws next round
@@ -353,6 +354,7 @@ function startRound(state) {
   state.round += 1;
   state.effects.reverseNext = false;
   state.effects.shotgunNext = false;
+  state.effects.sniperNext = false;
   state.effects.doubleBarrelCall = null;
   state.rattlesnakeUsedThisRound = {};
   state.lastItemForSnake = null;
@@ -652,9 +654,14 @@ function tryMarkScentDebt(state, shooterNr, victims) {
   });
 }
 
-/** 防弹衣：抵消本次实弹伤害（仅实弹结算调用） */
-function absorbLiveBulletWithVest(state, player) {
+/** 防弹衣：抵消本次实弹伤害；狙击枪穿透时失效但不抵消 */
+function absorbLiveBulletWithVest(state, player, pierceVest) {
   if (!player || !player.bulletproof) return false;
+  if (pierceVest) {
+    player.bulletproof = false;
+    logState(state, `${player.name} 的防弹衣被狙击枪无视并失效。`);
+    return false;
+  }
   player.bulletproof = false;
   logState(state, `${player.name} 的防弹衣抵消了本次实弹伤害。`);
   return true;
@@ -672,9 +679,10 @@ function applyDamage(state, target, amount, sourceMsg, ctx) {
       if (p && p.alive) victims.push(p);
     });
   }
+  const pierceVest = !!(ctx && ctx.pierceVest);
   const damaged = [];
   victims.forEach((v) => {
-    if (ctx && ctx.liveBullet && absorbLiveBulletWithVest(state, v)) return;
+    if (ctx && ctx.liveBullet && absorbLiveBulletWithVest(state, v, pierceVest)) return;
     v.hp -= amount;
     damaged.push(v);
     logState(state, `${sourceMsg || ''}${v.name} 受到 ${amount} 点伤害（剩余 ${Math.max(v.hp, 0)}）。`);
@@ -756,14 +764,23 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
 
   let dmg = 1;
   let shotgunUsed = false;
+  let sniperUsed = false;
   let scentDebtBonus = false;
   let scentDebtClear = false;
-  if (resolved === BULLET.LIVE && state.effects.shotgunNext) {
-    dmg = 2;
-    shotgunUsed = true;
+  // 霰弹与狙击不可叠加：优先已挂起的霰弹，二者不会同时生效
+  if (resolved === BULLET.LIVE) {
+    if (state.effects.shotgunNext) {
+      dmg = 2;
+      shotgunUsed = true;
+      state.effects.shotgunNext = false;
+      state.effects.sniperNext = false;
+    } else if (state.effects.sniperNext) {
+      sniperUsed = true;
+      state.effects.sniperNext = false;
+    }
+  } else {
     state.effects.shotgunNext = false;
-  } else if (resolved !== BULLET.LIVE) {
-    state.effects.shotgunNext = false;
+    state.effects.sniperNext = false;
   }
 
   // 追香讨债：仅实弹打债务人；有霰弹则不追加但仍清标记
@@ -809,6 +826,7 @@ function shoot(state, actorNr, targetActorNr, nightOwlTargetNr) {
       resolved,
       dmg,
       shotgunUsed,
+      sniperUsed,
       scentDebtBonus,
       scentDebtClear,
       nightOwlTargetNr: owlTarget || null,
@@ -843,6 +861,9 @@ function continueAfterShotReveal(state) {
   if (pending.shotgunUsed) {
     logState(state, '霰弹枪生效：伤害 2 点。');
   }
+  if (pending.sniperUsed) {
+    logState(state, '狙击枪生效：无视防弹衣。');
+  }
   if (pending.scentDebtClear) {
     if (pending.scentDebtBonus) {
       logState(state, '追香：讨债生效，实弹伤害 +1。');
@@ -852,6 +873,7 @@ function continueAfterShotReveal(state) {
   }
 
   let extraTurn = false;
+  const pierceVest = !!pending.sniperUsed;
 
   if (resolved === BULLET.SPECIAL) {
     const silver = findSilverSpike(state);
@@ -891,7 +913,7 @@ function continueAfterShotReveal(state) {
       });
       const damaged = [];
       victims.forEach((v) => {
-        if (absorbLiveBulletWithVest(state, v)) return;
+        if (absorbLiveBulletWithVest(state, v, pierceVest)) return;
         v.hp -= amount;
         damaged.push(v);
         logState(state, `夜枭实弹：${v.name} -${amount}（剩余 ${Math.max(v.hp, 0)}）`);
@@ -907,8 +929,12 @@ function continueAfterShotReveal(state) {
       tryMarkScentDebt(state, shooter.actorNr, damaged);
       checkWin(state);
     } else if (pending.scentDebtBonus) {
-      // 基础 1 点走连锁；讨债 +1 只打债务人本人（防弹衣抵消则整次不加伤）
-      const damaged = applyDamage(state, target, 1, '', { shotBy: shooter.actorNr, liveBullet: true });
+      // 基础 1 点走连锁；讨债 +1 只打债务人本人（防弹衣抵消则整次不加伤；狙击枪可穿透）
+      const damaged = applyDamage(state, target, 1, '', {
+        shotBy: shooter.actorNr,
+        liveBullet: true,
+        pierceVest
+      });
       const primaryHit = damaged.some((v) => Number(v.actorNr) === Number(target.actorNr));
       if (primaryHit && target.alive) {
         target.hp -= 1;
@@ -922,7 +948,11 @@ function continueAfterShotReveal(state) {
         checkWin(state);
       }
     } else {
-      applyDamage(state, target, dmg, '', { shotBy: shooter.actorNr, liveBullet: true });
+      applyDamage(state, target, dmg, '', {
+        shotBy: shooter.actorNr,
+        liveBullet: true,
+        pierceVest
+      });
     }
   } else if (resolved === BULLET.BLANK) {
     if (toSelf) {
@@ -1318,8 +1348,21 @@ function applyItemEffect(state, player, itemId, payload) {
       break;
     }
     case 'shotgun':
+      if (state.effects.sniperNext) {
+        state.effects.sniperNext = false;
+        logState(state, '霰弹枪替换狙击枪挂起（二者不可叠加）。');
+      }
       state.effects.shotgunNext = true;
       logState(state, '霰弹枪已挂起：下一发若为实弹则伤害×2。');
+      startItemFx(state, player, itemId, payload, {});
+      break;
+    case 'sniper':
+      if (state.effects.shotgunNext) {
+        state.effects.shotgunNext = false;
+        logState(state, '狙击枪替换霰弹枪挂起（二者不可叠加）。');
+      }
+      state.effects.sniperNext = true;
+      logState(state, '狙击枪已挂起：下一发实弹无视防弹衣。');
       startItemFx(state, player, itemId, payload, {});
       break;
     case 'vest':
@@ -1621,6 +1664,7 @@ function publicView(state, viewerActorNr) {
     effects: {
       reverseNext: state.effects.reverseNext,
       shotgunNext: state.effects.shotgunNext,
+      sniperNext: state.effects.sniperNext,
       linked: flattenLinked(state),
       linkedPairs: state.effects.linkedPairs.map((pair) => pair.slice()),
       doubleItemBonus: state.effects.doubleItemBonus,

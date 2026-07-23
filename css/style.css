@@ -835,6 +835,11 @@ button.primary {
   color: #b8d6f5;
 }
 
+.pill.sniper-pill {
+  border-color: rgba(220, 100, 90, 0.5);
+  color: #ffb0a8;
+}
+
 .pill.db-call.ok {
   border-color: rgba(111, 191, 138, 0.5);
   color: #b8e6c6;
@@ -3267,6 +3272,7 @@ button.primary {
 
 .fx-draw { color: #e8c57a; font-size: 2rem; }
 .fx-shotgun { color: #ffb08a; }
+.fx-sniper { color: #ff8a8a; }
 .fx-vest { color: #9ec4ef; }
 .fx-reverse { font-size: 1.2rem; letter-spacing: 0.08em; color: #7ec8e3; }
 

@@ -82,12 +82,17 @@ const ITEMS = {
   shotgun: {
     id: 'shotgun', name: '霰弹枪', glyph: '霰', hue: 0,
     art: 'assets/tools/shotgun.jpg',
-    desc: '若下一发为实弹，则开枪时造成的伤害改为造成2点伤害。'
+    desc: '若下一发为实弹，则开枪时造成的伤害改为造成2点伤害。不可与狙击枪叠加。'
   },
   vest: {
     id: 'vest', name: '防弹衣', glyph: '甲', hue: 205,
     art: 'assets/tools/vest.jpg',
     desc: '抵御你受到的下一次实弹伤害（含霰弹/追香加伤）。特殊弹、止痛药等非实弹伤害无法抵消。'
+  },
+  sniper: {
+    id: 'sniper', name: '狙击枪', glyph: '狙', hue: 15,
+    art: 'assets/tools/sniper.jpg',
+    desc: '若下一发为实弹，无视防弹衣造成一点伤害，并移除被击中者的防弹衣效果。不可与霰弹枪叠加。'
   },
   swap: {
     id: 'swap', name: '换弹', glyph: '换', hue: 160,

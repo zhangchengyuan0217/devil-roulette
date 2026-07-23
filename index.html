@@ -648,7 +648,7 @@
           payload.targets = foes.slice(0, 1).map((p) => p.actorNr);
         }
         // 跳过需要复杂选择且可能无效的牌，直接开枪更稳
-        if (!payload._skip && ['bind', 'steal', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'vest', 'reverse', 'peek_top'].includes(id)) {
+        if (!payload._skip && ['bind', 'steal', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'sniper', 'vest', 'reverse', 'peek_top'].includes(id)) {
           handleAction(gameState, curNr, { type: 'use_item', itemIndex: idx, payload });
           refreshLocalView();
           return;
@@ -1777,7 +1777,9 @@
           nameEl.textContent = rawLabel;
           resultEl.textContent = flipped
             ? `抽出【${rawLabel}】…`
-            : (`抽出【${rawLabel}】` + (awaiting.shotgunUsed ? ' · 霰弹枪×2' : ''));
+            : (`抽出【${rawLabel}】` +
+              (awaiting.shotgunUsed ? ' · 霰弹枪×2' : '') +
+              (awaiting.sniperUsed ? ' · 狙击穿甲' : ''));
 
           if (!flipped) {
             shotRevealTimer = setTimeout(landAndClose, 1500);
@@ -1799,6 +1801,7 @@
               nameEl.textContent = resolvedLabel;
               let detail = `抽出【${rawLabel}】 → 结算为【${resolvedLabel}】`;
               if (awaiting.shotgunUsed) detail += ' · 霰弹枪×2';
+              if (awaiting.sniperUsed) detail += ' · 狙击穿甲';
               resultEl.textContent = detail;
               card.classList.remove('flip-mid');
               void card.offsetWidth;
@@ -1955,6 +1958,9 @@
       } else if (id === 'shotgun') {
         stageHtml = `<div class="fx-icon fx-shotgun">伤害 ×2</div>`;
         resultText = '下一发实弹伤害 ×2（全员可见）';
+      } else if (id === 'sniper') {
+        stageHtml = `<div class="fx-icon fx-sniper">穿甲</div>`;
+        resultText = '下一发实弹无视防弹衣，并移除被击中者的防弹衣';
       } else if (id === 'vest') {
         stageHtml = `<div class="fx-icon fx-vest">防弹</div>`;
         resultText = `${awaiting.targetName || who} 获得防弹衣：抵消下一次实弹伤害`;
@@ -2720,6 +2726,7 @@
       const pills = [];
       if (view.effects.reverseNext) pills.push('<span class="pill">反转挂起</span>');
       if (view.effects.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
+      if (view.effects.sniperNext) pills.push('<span class="pill sniper-pill">狙击挂起</span>');
       (view.players || []).forEach((p) => {
         if (!p.bulletproof || !p.alive) return;
         pills.push(`<span class="pill vest-pill">防弹 · ${p.name}</span>`);
