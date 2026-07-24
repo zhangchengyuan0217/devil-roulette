@@ -1655,6 +1655,12 @@
     // 移动端/iPad：须先在用户手势里「解锁」音频，之后动画回调里才能播
     let audioUnlocked = false;
     const itemSfxPool = Object.create(null);
+    const shotSfxPool = Object.create(null);
+    const SHOT_SFX_SRC = {
+      live: 'assets/audio/shots/shoot_live.mp3',
+      blank: 'assets/audio/shots/shoot_blank.mp3',
+      special: 'assets/audio/shots/shoot_special.mp3'
+    };
     let yourTurnSfx = null;
     let sharedAudioCtx = null;
     const audioUnlockEvents = ['pointerdown', 'touchstart', 'click', 'keydown'];
@@ -1670,8 +1676,70 @@
       if (audioUnlocked) removeAudioUnlockListeners();
     }
 
+    function makeSfxAudio(src) {
+      const audio = new Audio(src);
+      audio.preload = 'auto';
+      // iOS / iPadOS：内联播放，避免抢占全屏媒体会话
+      try {
+        audio.setAttribute('playsinline', '');
+        audio.setAttribute('webkit-playsinline', '');
+        audio.playsInline = true;
+      } catch (_) {}
+      return audio;
+    }
+
+    function warmSfxAudio(audio) {
+      if (!audio) return;
+      try {
+        const wasMuted = audio.muted;
+        audio.muted = true;
+        const p = audio.play();
+        const restore = () => {
+          try {
+            audio.pause();
+            audio.currentTime = 0;
+          } catch (_) {}
+          audio.muted = wasMuted;
+        };
+        if (p && typeof p.then === 'function') {
+          p.then(restore).catch(() => {
+            audio.muted = wasMuted;
+          });
+        } else {
+          restore();
+        }
+      } catch (_) {
+        try {
+          audio.muted = false;
+        } catch (_) {}
+      }
+    }
+
+    function getShotSfx(kind) {
+      if (!SHOT_SFX_SRC[kind]) return null;
+      let audio = shotSfxPool[kind];
+      if (!audio) {
+        audio = makeSfxAudio(SHOT_SFX_SRC[kind]);
+        shotSfxPool[kind] = audio;
+      }
+      return audio;
+    }
+
+    function warmShotSfx() {
+      Object.keys(SHOT_SFX_SRC).forEach((kind) => {
+        warmSfxAudio(getShotSfx(kind));
+      });
+    }
+
+    function resumeSharedAudioCtx() {
+      try {
+        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+          sharedAudioCtx.resume().catch(() => {});
+        }
+      } catch (_) {}
+    }
+
     function unlockAudio() {
-      if (audioUnlocked) return;
       try {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (Ctx) {
@@ -1679,6 +1747,9 @@
           if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume().catch(() => {});
         }
       } catch (_) {}
+      if (audioUnlocked) return;
+      // 仅在首次解锁手势里预热（iOS 对「动画里再 new Audio」很挑）
+      warmShotSfx();
       try {
         // 静音短音解锁 HTMLAudio（iOS Safari）
         const warm = new Audio(
@@ -1690,6 +1761,7 @@
           p.then(() => {
             audioUnlocked = true;
             removeAudioUnlockListeners();
+            warmShotSfx();
             try {
               warm.pause();
               warm.currentTime = 0;
@@ -1698,6 +1770,7 @@
         } else {
           audioUnlocked = true;
           removeAudioUnlockListeners();
+          warmShotSfx();
         }
       } catch (_) {}
     }
@@ -1709,47 +1782,42 @@
     function getItemSfx(itemId) {
       let audio = itemSfxPool[itemId];
       if (!audio) {
-        audio = new Audio(`assets/audio/tools/${itemId}.mp3`);
-        audio.preload = 'auto';
+        audio = makeSfxAudio(`assets/audio/tools/${itemId}.mp3`);
         itemSfxPool[itemId] = audio;
       }
       return audio;
     }
 
-    function playItemSfx(itemId) {
-      if (!itemId || !ITEMS[itemId]) return;
+    function playHtmlAudio(audio) {
+      if (!audio) return;
       unlockAudio();
+      resumeSharedAudioCtx();
       try {
-        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
-          sharedAudioCtx.resume().catch(() => {});
-        }
-        const audio = getItemSfx(itemId);
-        try {
-          audio.pause();
-          audio.currentTime = 0;
-        } catch (_) {}
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (_) {}
+      try {
         const p = audio.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch (_) {}
     }
 
+    function playItemSfx(itemId) {
+      if (!itemId || !ITEMS[itemId]) return;
+      playHtmlAudio(getItemSfx(itemId));
+    }
+
+    function playShotSfx(kind) {
+      const audio = getShotSfx(kind);
+      if (!audio) return;
+      playHtmlAudio(audio);
+    }
+
     function playYourTurnSfx() {
-      unlockAudio();
-      try {
-        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
-          sharedAudioCtx.resume().catch(() => {});
-        }
-        if (!yourTurnSfx) {
-          yourTurnSfx = new Audio('assets/audio/ui/your_turn.mp3');
-          yourTurnSfx.preload = 'auto';
-        }
-        try {
-          yourTurnSfx.pause();
-          yourTurnSfx.currentTime = 0;
-        } catch (_) {}
-        const p = yourTurnSfx.play();
-        if (p && typeof p.catch === 'function') p.catch(() => {});
-      } catch (_) {}
+      if (!yourTurnSfx) {
+        yourTurnSfx = makeSfxAudio('assets/audio/ui/your_turn.mp3');
+      }
+      playHtmlAudio(yourTurnSfx);
     }
 
     function finishPainkillerDice() {
@@ -2014,6 +2082,7 @@
             : (`抽出【${rawLabel}】` +
               (awaiting.shotgunUsed ? ' · 霰弹枪×2' : '') +
               (awaiting.sniperUsed ? ' · 狙击穿甲' : ''));
+          playShotSfx(rawKind);
 
           if (!flipped) {
             shotRevealTimer = setTimeout(landAndClose, 1500);
@@ -2042,6 +2111,7 @@
               card.classList.add('flip-done');
               overlay.classList.remove('is-flipping');
               sub.textContent = `${who} 向 ${targetName} 开枪`;
+              playShotSfx(resolvedKind);
               shotRevealTimer = setTimeout(landAndClose, 1250);
             }, 400);
           }, 1150);
@@ -3935,6 +4005,8 @@
 
     document.getElementById('shootConfirmCancel').onclick = () => closeShootConfirm();
     document.getElementById('shootConfirmOk').onclick = () => {
+      unlockAudio();
+      warmShotSfx();
       const cb = shootConfirmPending && shootConfirmPending.onOk;
       closeShootConfirm();
       if (cb) cb();
