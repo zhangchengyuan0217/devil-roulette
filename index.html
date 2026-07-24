@@ -377,6 +377,10 @@
     let lastAppliedViewKey = '';
     let lastSeatLayoutKey = '';
     let lastYourTurnBannerKey = '';
+    let lastCenterboardSig = '';
+    let lastLogSig = '';
+    let lastGunpowderSig = '';
+    let lastPrivateInfoSig = '';
 
     /** 动画收尾 setTimeout，开局/回大厅时必须清掉，避免上局回调污染本局 */
     let animCloseTimers = [];
@@ -557,8 +561,17 @@
 
     function syncLogFromView() {
       if (!view || !view.publicLog) return;
-      logBox.innerHTML = view.publicLog.map((m) => `<div>${m}</div>`).join('');
+      const logs = view.publicLog;
+      const sig = `${logs.length}|${logs[logs.length - 1] || ''}`;
+      if (sig === lastLogSig) return;
+      lastLogSig = sig;
+      logBox.innerHTML = logs.map((m) => `<div>${m}</div>`).join('');
       logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function bumpStateSeq() {
+      if (!gameState) return;
+      gameState.seq = (Number(gameState.seq) || 0) + 1;
     }
 
     function roomActors() {
@@ -580,8 +593,9 @@
       }
     }
 
-    function refreshLocalView() {
+    function refreshLocalView(opts) {
       if (!gameState) return;
+      if (!(opts && opts.skipBump)) bumpStateSeq();
       applyView(publicView(gameState, myActorNr));
       scheduleBotIfNeeded();
     }
@@ -823,6 +837,10 @@
       lastItemFxToken = '';
       lastWinKey = '';
       lastYourTurnBannerKey = '';
+      lastCenterboardSig = '';
+      lastLogSig = '';
+      lastGunpowderSig = '';
+      lastPrivateInfoSig = '';
       selectedHand = [];
       selectedTarget = null;
       initPlayers(gameState, actors, mode);
@@ -867,6 +885,10 @@
       lastAppliedViewKey = '';
       lastSeatLayoutKey = '';
       lastRenderedHandSig = '';
+      lastCenterboardSig = '';
+      lastLogSig = '';
+      lastGunpowderSig = '';
+      lastPrivateInfoSig = '';
       offlineSim = false;
       gameState = null;
       fullStateBackup = null;
@@ -911,8 +933,8 @@
       if (!full || !full.phase) return false;
       if (full.phase !== 'playing' && full.phase !== 'ended') return false;
       const seq = Number(full.seq) || 0;
-      // 允许同 seq 再应用一次（开局补发），但避免无意义回退
-      if (seq > 0 && seq < lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
+      // 已有同 seq 或更新视图时跳过（避免 EVT_FULL + EVT_STATE 双绘；丢包时 last 仍旧可再应用）
+      if (seq > 0 && seq <= lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
         return false;
       }
       try {
@@ -1007,8 +1029,10 @@
     function persistAndBroadcast(opts) {
       if (!gameState || !isHost()) return;
 
+      bumpStateSeq();
+
       if (offlineSim) {
-        refreshLocalView();
+        refreshLocalView({ skipBump: true });
         return;
       }
 
@@ -1262,6 +1286,11 @@
       lastAppliedViewKey = '';
       lastSeatLayoutKey = '';
       lastRenderedHandSig = '';
+      lastCenterboardSig = '';
+      lastLogSig = '';
+      lastGunpowderSig = '';
+      lastPrivateInfoSig = '';
+      lastYourTurnBannerKey = '';
       joinInFlight = false;
       window.__rejoinPending = false;
       statusDiv.textContent = statusText || '已回到大厅';
@@ -1490,9 +1519,10 @@
       }).join('');
 
       document.getElementById('revealOverlay').classList.add('show');
-      setTimeout(() => {
+      scheduleAnimClose(() => {
+        if (!view || !view.players) return;
         view.players.forEach((p, i) => {
-          setTimeout(() => {
+          scheduleAnimClose(() => {
             const el = document.getElementById('flip-' + p.actorNr);
             if (el) el.classList.add('flipped');
           }, 400 + i * 180);
@@ -2908,98 +2938,138 @@
       panel.classList.toggle('layout-trio', trio);
       panel.classList.toggle('layout-classic', !fourPlayer && !duel && !trio);
 
-      document.getElementById('roundInfo').innerHTML =
-        `<strong>第 ${view.round} 轮</strong>` +
-        (fourPlayer
-          ? (view.mode === 'team'
-            ? ' · 上下队友 · <span style="color:#ff8f88">红队</span> vs <span style="color:#8eb6ff">蓝队</span>'
-            : ' · 四人环桌')
-          : duel
-            ? ' · 双人对决'
-            : trio
-              ? ' · 三人混战'
-              : '') +
-        (view.phase === 'ended'
-          ? (view.winner
-            ? ` · <strong style="color:#6fbf8a">玩家<span class="seat-nr">#${view.winner}</span> 获胜</strong>`
-            : view.winnerTeam != null
-              ? ` · <strong style="color:#6fbf8a">${view.winnerTeam === 0 ? '红队' : '蓝队'} 获胜</strong>`
-              : ' · 结束')
-          : ` · 当前行动 <span class="seat-nr">#${curNr}</span>`);
-
       // 中央弹药：牌桌转轮内剩余（实/空/特殊）
       const table = view.tableBullets || { live: 0, blank: 0, special: 0 };
-      document.getElementById('loadoutRow').innerHTML = `
-        <span class="ammo-legend">牌桌剩余</span>
-        <span class="ammo-chip live"><i></i>实弹 ${table.live}</span>
-        <span class="ammo-chip blank"><i></i>空弹 ${table.blank}</span>
-        <span class="ammo-chip special"><i></i>特殊 ${table.special}</span>
-      `;
-
-      const cyl = document.getElementById('cylinder');
       const dbCall = view.effects && view.effects.doubleBarrelCall;
-      // 有双管公示时：转轮按「第1发→第N发」标出发数；未打出的声明弹正面朝上
-      cyl.innerHTML = Array.from({ length: view.magazineCount }, (_, i) => {
-        const fromTop = i + 1;
-        const isDb = dbCall && Number(dbCall.fromTop) === fromTop;
-        if (!dbCall) return '<div class="shell unknown"></div>';
-        if (!isDb) {
-          return `<div class="cyl-shell-wrap">
-            <div class="shell unknown"></div>
-            <span class="cyl-shell-ord">${fromTop}</span>
-          </div>`;
-        }
-        const actual = dbCall.actual;
-        const cls = actual === 'live' ? 'live' : actual === 'blank' ? 'blank' : 'special';
-        const mark = actual === 'live' ? '实' : actual === 'blank' ? '空' : '特';
-        const tip = `双管公示：第 ${fromTop} 发是【${bulletLabel(actual)}】（声明【${bulletLabel(dbCall.declared)}】${dbCall.success ? '成功' : '失败'}）`;
-        return `<div class="cyl-shell-wrap db-mark${dbCall.success ? ' ok' : ' bad'}" title="${tip}">
-          <div class="shell ${cls}">${mark}</div>
-          <span class="cyl-shell-ord">${fromTop}</span>
-          <span class="cyl-shell-tag">公示</span>
-        </div>`;
-      }).join('');
-      document.getElementById('feltStatus').textContent =
-        view.awaiting && view.awaiting.type === 'rattlesnake'
-          ? `响尾蛇抉择中：是否将【${view.awaiting.itemName || '道具'}】复制到手牌…`
-          : dbCall
-            ? `转轮剩余 ${view.magazineCount} 发 · 第 ${dbCall.fromTop} 发双管公示中`
-            : view.magazineCount
-              ? `转轮剩余 ${view.magazineCount} 发（背面朝上）`
-              : '本轮弹药已打空';
+      const fx = view.effects || {};
+      const awaiting = view.awaiting;
+      const vestSig = (view.players || [])
+        .filter((p) => p.bulletproof && p.alive)
+        .map((p) => `${p.actorNr}:${p.name}`)
+        .join(',');
+      const linkSig = (fx.linkedPairs && fx.linkedPairs.length)
+        ? fx.linkedPairs.map((pair) => pair.join('-')).join('|')
+        : (fx.linked || []).join(',');
+      const debtSig = (view.players || [])
+        .filter((p) => p.role === 'zhui_xiang' && p.debtorNr != null)
+        .map((p) => `${p.actorNr}>${p.debtorNr}`)
+        .join(',');
+      const centerSig = [
+        view.round,
+        view.mode,
+        view.phase,
+        curNr,
+        view.winner || '',
+        view.winnerTeam != null ? view.winnerTeam : '',
+        fourPlayer ? 1 : 0,
+        duel ? 1 : 0,
+        trio ? 1 : 0,
+        view.magazineCount,
+        table.live,
+        table.blank,
+        table.special,
+        dbCall ? `${dbCall.fromTop}:${dbCall.actual}:${dbCall.declared}:${dbCall.success ? 1 : 0}` : '',
+        fx.reverseNext ? 1 : 0,
+        fx.shotgunNext ? 1 : 0,
+        fx.sniperNext ? 1 : 0,
+        awaiting && awaiting.type === 'rattlesnake' ? `rs:${awaiting.itemName || ''}` : '',
+        vestSig,
+        linkSig,
+        debtSig
+      ].join('~');
 
-      const pills = [];
-      if (view.effects.reverseNext) pills.push('<span class="pill">反转挂起</span>');
-      if (view.effects.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
-      if (view.effects.sniperNext) pills.push('<span class="pill sniper-pill">狙击挂起</span>');
-      (view.players || []).forEach((p) => {
-        if (!p.bulletproof || !p.alive) return;
-        pills.push(`<span class="pill vest-pill">防弹 · ${p.name}</span>`);
-      });
-      if (dbCall) {
-        pills.push(
-          `<span class="pill db-call${dbCall.success ? ' ok' : ' bad'}">双管公示 · 第 ${dbCall.fromTop} 发【${bulletLabel(dbCall.actual)}】</span>`
-        );
+      if (centerSig !== lastCenterboardSig) {
+        lastCenterboardSig = centerSig;
+        document.getElementById('roundInfo').innerHTML =
+          `<strong>第 ${view.round} 轮</strong>` +
+          (fourPlayer
+            ? (view.mode === 'team'
+              ? ' · 上下队友 · <span style="color:#ff8f88">红队</span> vs <span style="color:#8eb6ff">蓝队</span>'
+              : ' · 四人环桌')
+            : duel
+              ? ' · 双人对决'
+              : trio
+                ? ' · 三人混战'
+                : '') +
+          (view.phase === 'ended'
+            ? (view.winner
+              ? ` · <strong style="color:#6fbf8a">玩家<span class="seat-nr">#${view.winner}</span> 获胜</strong>`
+              : view.winnerTeam != null
+                ? ` · <strong style="color:#6fbf8a">${view.winnerTeam === 0 ? '红队' : '蓝队'} 获胜</strong>`
+                : ' · 结束')
+            : ` · 当前行动 <span class="seat-nr">#${curNr}</span>`);
+
+        document.getElementById('loadoutRow').innerHTML = `
+          <span class="ammo-legend">牌桌剩余</span>
+          <span class="ammo-chip live"><i></i>实弹 ${table.live}</span>
+          <span class="ammo-chip blank"><i></i>空弹 ${table.blank}</span>
+          <span class="ammo-chip special"><i></i>特殊 ${table.special}</span>
+        `;
+
+        const cyl = document.getElementById('cylinder');
+        // 有双管公示时：转轮按「第1发→第N发」标出发数；未打出的声明弹正面朝上
+        cyl.innerHTML = Array.from({ length: view.magazineCount }, (_, i) => {
+          const fromTop = i + 1;
+          const isDb = dbCall && Number(dbCall.fromTop) === fromTop;
+          if (!dbCall) return '<div class="shell unknown"></div>';
+          if (!isDb) {
+            return `<div class="cyl-shell-wrap">
+              <div class="shell unknown"></div>
+              <span class="cyl-shell-ord">${fromTop}</span>
+            </div>`;
+          }
+          const actual = dbCall.actual;
+          const cls = actual === 'live' ? 'live' : actual === 'blank' ? 'blank' : 'special';
+          const mark = actual === 'live' ? '实' : actual === 'blank' ? '空' : '特';
+          const tip = `双管公示：第 ${fromTop} 发是【${bulletLabel(actual)}】（声明【${bulletLabel(dbCall.declared)}】${dbCall.success ? '成功' : '失败'}）`;
+          return `<div class="cyl-shell-wrap db-mark${dbCall.success ? ' ok' : ' bad'}" title="${tip}">
+            <div class="shell ${cls}">${mark}</div>
+            <span class="cyl-shell-ord">${fromTop}</span>
+            <span class="cyl-shell-tag">公示</span>
+          </div>`;
+        }).join('');
+        document.getElementById('feltStatus').textContent =
+          awaiting && awaiting.type === 'rattlesnake'
+            ? `响尾蛇抉择中：是否将【${awaiting.itemName || '道具'}】复制到手牌…`
+            : dbCall
+              ? `转轮剩余 ${view.magazineCount} 发 · 第 ${dbCall.fromTop} 发双管公示中`
+              : view.magazineCount
+                ? `转轮剩余 ${view.magazineCount} 发（背面朝上）`
+                : '本轮弹药已打空';
+
+        const pills = [];
+        if (fx.reverseNext) pills.push('<span class="pill">反转挂起</span>');
+        if (fx.shotgunNext) pills.push('<span class="pill">霰弹挂起</span>');
+        if (fx.sniperNext) pills.push('<span class="pill sniper-pill">狙击挂起</span>');
+        (view.players || []).forEach((p) => {
+          if (!p.bulletproof || !p.alive) return;
+          pills.push(`<span class="pill vest-pill">防弹 · ${p.name}</span>`);
+        });
+        if (dbCall) {
+          pills.push(
+            `<span class="pill db-call${dbCall.success ? ' ok' : ' bad'}">双管公示 · 第 ${dbCall.fromTop} 发【${bulletLabel(dbCall.actual)}】</span>`
+          );
+        }
+        if (fx.linkedPairs && fx.linkedPairs.length) {
+          const pairText = fx.linkedPairs.map((pair) => {
+            const names = pair.map((nr) => {
+              const p = (view.players || []).find((x) => Number(x.actorNr) === Number(nr));
+              return p ? p.name : `#${nr}`;
+            });
+            return names.join('↔');
+          }).join(' · ');
+          pills.push(`<span class="pill">连锁 ${pairText}</span>`);
+        } else if (fx.linked && fx.linked.length) {
+          pills.push(`<span class="pill">连锁 ${fx.linked.join(',')}</span>`);
+        }
+        (view.players || []).forEach((p) => {
+          if (p.role !== 'zhui_xiang' || p.debtorNr == null) return;
+          const debt = (view.players || []).find((x) => Number(x.actorNr) === Number(p.debtorNr));
+          const debtName = debt ? debt.name : `#${p.debtorNr}`;
+          pills.push(`<span class="pill">追香债 · ${p.name}→${debtName}</span>`);
+        });
+        document.getElementById('effectPills').innerHTML = pills.join('');
       }
-      if (view.effects.linkedPairs && view.effects.linkedPairs.length) {
-        const pairText = view.effects.linkedPairs.map((pair) => {
-          const names = pair.map((nr) => {
-            const p = (view.players || []).find((x) => Number(x.actorNr) === Number(nr));
-            return p ? p.name : `#${nr}`;
-          });
-          return names.join('↔');
-        }).join(' · ');
-        pills.push(`<span class="pill">连锁 ${pairText}</span>`);
-      } else if (view.effects.linked && view.effects.linked.length) {
-        pills.push(`<span class="pill">连锁 ${view.effects.linked.join(',')}</span>`);
-      }
-      (view.players || []).forEach((p) => {
-        if (p.role !== 'zhui_xiang' || p.debtorNr == null) return;
-        const debt = (view.players || []).find((x) => Number(x.actorNr) === Number(p.debtorNr));
-        const debtName = debt ? debt.name : `#${p.debtorNr}`;
-        pills.push(`<span class="pill">追香债 · ${p.name}→${debtName}</span>`);
-      });
-      document.getElementById('effectPills').innerHTML = pills.join('');
 
       const me = view.players.find((p) => Number(p.actorNr) === Number(myActorNr));
       const myTurn = view.phase === 'playing' && !view.awaiting && curNr === Number(myActorNr);
@@ -3282,7 +3352,11 @@
       if (view.me && view.me.lastPeek) {
         peeks.push(`检视：第 ${view.me.lastPeek.index + 1} 发 = ${bulletLabel(view.me.lastPeek.bullet)}`);
       }
-      document.getElementById('privateInfo').textContent = peeks.join(' ｜ ');
+      const privateText = peeks.join(' ｜ ');
+      if (privateText !== lastPrivateInfoSig) {
+        lastPrivateInfoSig = privateText;
+        document.getElementById('privateInfo').textContent = privateText;
+      }
       renderGunpowderDock(view);
 
       const othersAlive = view.players.filter(
@@ -3393,6 +3467,10 @@
       lastAppliedViewKey = '';
       lastSeatLayoutKey = '';
       lastRenderedHandSig = '';
+      lastCenterboardSig = '';
+      lastLogSig = '';
+      lastGunpowderSig = '';
+      lastPrivateInfoSig = '';
       clearAllAnimTimers();
       clearGameOverlays();
       initPlayers(gameState, actors, mode);
@@ -3611,9 +3689,18 @@
       joinInFlight = false;
       clearLobbySyncTimer();
       clearStartResyncTimers();
+      clearAllAnimTimers();
+      clearGameOverlays();
       gameState = null;
       view = null;
       lastAppliedStateSeq = -1;
+      lastAppliedViewKey = '';
+      lastCenterboardSig = '';
+      lastLogSig = '';
+      lastGunpowderSig = '';
+      lastPrivateInfoSig = '';
+      lastRenderedHandSig = '';
+      lastYourTurnBannerKey = '';
       await disconnectClient();
       createClient(!!preferRejoin);
     }
@@ -4166,6 +4253,9 @@
       if (!felt || !shellsEl) return;
       const bottom = v && v.me && v.me.gunpowderBottom;
       // null = 非火药回合；[] = 火药回合但弹堆已空（仍提示）
+      const gpSig = bottom == null ? 'x' : `y:${bottom.join(',')}`;
+      if (gpSig === lastGunpowderSig) return;
+      lastGunpowderSig = gpSig;
       if (bottom == null) {
         felt.hidden = true;
         shellsEl.innerHTML = '';

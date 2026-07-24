@@ -1674,7 +1674,8 @@ function publicView(state, viewerActorNr) {
     winner: state.winner,
     winnerTeam: state.winnerTeam,
     publicLog: state.publicLog.slice(-30),
-    seq: ++state.seq,
+    // seq 由权威状态变更时递增，勿在 publicView 内 ++（否则同一次广播会反复打满去重）
+    seq: Number(state.seq) || 0,
     players: state.players.map((p) => ({
       actorNr: p.actorNr,
       name: p.name,
