@@ -1625,6 +1625,7 @@
     // 移动端/iPad：须先在用户手势里「解锁」音频，之后动画回调里才能播
     let audioUnlocked = false;
     const itemSfxPool = Object.create(null);
+    let yourTurnSfx = null;
     let sharedAudioCtx = null;
     const audioUnlockEvents = ['pointerdown', 'touchstart', 'click', 'keydown'];
 
@@ -1698,6 +1699,25 @@
           audio.currentTime = 0;
         } catch (_) {}
         const p = audio.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (_) {}
+    }
+
+    function playYourTurnSfx() {
+      unlockAudio();
+      try {
+        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+          sharedAudioCtx.resume().catch(() => {});
+        }
+        if (!yourTurnSfx) {
+          yourTurnSfx = new Audio('assets/audio/ui/your_turn.mp3');
+          yourTurnSfx.preload = 'auto';
+        }
+        try {
+          yourTurnSfx.pause();
+          yourTurnSfx.currentTime = 0;
+        } catch (_) {}
+        const p = yourTurnSfx.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch (_) {}
     }
@@ -2249,6 +2269,7 @@
       overlay.classList.remove('show', 'in', 'out');
       void overlay.offsetWidth;
       overlay.classList.add('show', 'in');
+      playYourTurnSfx();
       // 冲入 ~0.5s + 停顿 1s → 横向拉伸淡出
       scheduleAnimClose(() => {
         overlay.classList.remove('in');
