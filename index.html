@@ -212,6 +212,10 @@
     <div class="item-fx-result" id="itemFxResult"></div>
   </div>
 
+  <div class="your-turn-overlay" id="yourTurnOverlay" aria-hidden="true">
+    <img class="your-turn-banner" id="yourTurnBanner" src="assets/background/your_turn.jpg" alt="Your Turn" draggable="false">
+  </div>
+
   <div class="ammo-pick-overlay" id="swapPickOverlay">
     <div class="ammo-pick-panel">
       <div class="ammo-pick-title" id="ammoPickTitle">换弹</div>
@@ -372,6 +376,7 @@
     let lastAppliedStateSeq = -1;
     let lastAppliedViewKey = '';
     let lastSeatLayoutKey = '';
+    let lastYourTurnBannerKey = '';
 
     /** 动画收尾 setTimeout，开局/回大厅时必须清掉，避免上局回调污染本局 */
     let animCloseTimers = [];
@@ -817,6 +822,7 @@
       lastShotRevealToken = '';
       lastItemFxToken = '';
       lastWinKey = '';
+      lastYourTurnBannerKey = '';
       selectedHand = [];
       selectedTarget = null;
       initPlayers(gameState, actors, mode);
@@ -857,6 +863,7 @@
       lastShotRevealToken = '';
       lastItemFxToken = '';
       lastWinKey = '';
+      lastYourTurnBannerKey = '';
       lastAppliedViewKey = '';
       lastSeatLayoutKey = '';
       lastRenderedHandSig = '';
@@ -1144,6 +1151,7 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
+      maybeShowYourTurnBanner();
       maybeShowWinCeremony();
       armAwaitingWatchdog();
       armInteractiveCountdown();
@@ -1225,15 +1233,16 @@
       clearAllAnimTimers();
       [
         'revealOverlay', 'firstSpinOverlay', 'ammoDrawOverlay', 'diceOverlay',
-        'ejectOverlay', 'shotRevealOverlay', 'itemFxOverlay', 'swapPickOverlay', 'playerPickOverlay',
+        'ejectOverlay', 'shotRevealOverlay', 'itemFxOverlay', 'yourTurnOverlay', 'swapPickOverlay', 'playerPickOverlay',
         'discardHandOverlay', 'dbDeclareOverlay', 'dbRevealOverlay', 'shootConfirmOverlay', 'winOverlay'
       ].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.classList.remove('show', 'landed', 'success', 'fail', 'reveal', 'is-live', 'is-blank', 'is-special', 'play', 'team-red', 'team-blue', 'is-draw', 'is-flipping');
+        if (el) el.classList.remove('show', 'landed', 'success', 'fail', 'reveal', 'is-live', 'is-blank', 'is-special', 'play', 'in', 'out', 'team-red', 'team-blue', 'is-draw', 'is-flipping');
       });
       const shotCard = document.getElementById('shotRevealCard');
       if (shotCard) shotCard.classList.remove('ready', 'flip-mid', 'flip-done');
       lastWinKey = '';
+      lastYourTurnBannerKey = '';
     }
 
     function resetToLobbyLocal(statusText) {
@@ -1502,6 +1511,7 @@
       maybeShowDbDeclare();
       maybeShowDbReveal();
       maybeShowDiscardHand();
+      maybeShowYourTurnBanner();
       maybeShowWinCeremony();
       armAwaitingWatchdog();
       armInteractiveCountdown();
@@ -2231,6 +2241,46 @@
       overlay.classList.remove('show', 'landed', 'play', 'team-red', 'team-blue', 'is-draw');
       const row = document.getElementById('winRow');
       if (row) row.innerHTML = '';
+    }
+
+    function playYourTurnBanner() {
+      const overlay = document.getElementById('yourTurnOverlay');
+      if (!overlay) return;
+      overlay.classList.remove('show', 'in', 'out');
+      void overlay.offsetWidth;
+      overlay.classList.add('show', 'in');
+      // 冲入 ~0.5s + 停顿 1s → 横向拉伸淡出
+      scheduleAnimClose(() => {
+        overlay.classList.remove('in');
+        overlay.classList.add('out');
+        scheduleAnimClose(() => {
+          overlay.classList.remove('show', 'out');
+        }, 420);
+      }, 500 + 1000);
+    }
+
+    function maybeShowYourTurnBanner() {
+      if (!view || view.phase !== 'playing' || !myActorNr) return;
+      const me = view.players.find((p) => Number(p.actorNr) === Number(myActorNr));
+      if (!me || !me.alive) return;
+      const curNr = view.turnOrder && view.turnOrder.length
+        ? Number(view.turnOrder[view.currentTurn])
+        : 0;
+      if (curNr !== Number(myActorNr)) return;
+
+      const prefix = `轮到 ${me.name} 行动`;
+      const logs = view.publicLog || [];
+      let hit = '';
+      for (let i = logs.length - 1; i >= 0; i--) {
+        const line = String(logs[i] || '');
+        if (line.startsWith(prefix)) {
+          hit = line;
+          break;
+        }
+      }
+      if (!hit || hit === lastYourTurnBannerKey) return;
+      lastYourTurnBannerKey = hit;
+      playYourTurnBanner();
     }
 
     function maybeShowWinCeremony() {
@@ -3317,6 +3367,7 @@
       lastShotRevealToken = '';
       lastItemFxToken = '';
       lastWinKey = '';
+      lastYourTurnBannerKey = '';
       lastAppliedStateSeq = -1;
       lastAppliedViewKey = '';
       lastSeatLayoutKey = '';
