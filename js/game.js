@@ -585,6 +585,17 @@ function onTurnStart(state, player) {
 function gunpowderBottomFor(state, viewer) {
   if (!viewer || viewer.role !== 'gunpowder' || !viewer.alive) return null;
   if (state.phase !== 'playing') return null;
+  // 新一轮 setup 尚未 beginTurns：不展示，避免偷看刚装入的弹匣
+  if (state.nextRoundStartTurn != null || state.pendingAmmoDraw) return null;
+  const aType = state.awaiting && state.awaiting.type;
+  if (
+    aType === 'ammo_draw' ||
+    aType === 'first_player_spin' ||
+    aType === 'double_barrel' ||
+    aType === 'double_barrel_reveal'
+  ) {
+    return null;
+  }
   const cur = currentPlayer(state);
   if (!cur || Number(cur.actorNr) !== Number(viewer.actorNr)) return null;
   if (!state.magazine.length) return [];
@@ -842,11 +853,22 @@ function continueAfterShotReveal(state) {
     return { ok: true, reason: '已结算' };
   }
   const pending = state.awaiting;
-  state.awaiting = null;
-
   const shooter = getPlayer(state, pending.actorNr);
   const target = getPlayer(state, pending.targetActorNr);
-  if (!shooter || !target) return { ok: false, reason: '玩家不存在' };
+  if (!shooter || !target) {
+    state.awaiting = null;
+    logState(state, '开枪结算异常：玩家缺失，强制推进。');
+    if (state.phase === 'ended') return { ok: true };
+    if (state.magazine.length === 0) {
+      markNextRoundResume(state);
+      startRound(state);
+    } else {
+      moveToNextPlayer(state);
+    }
+    if (!state.awaiting) tryStartHandDiscard(state);
+    return { ok: true };
+  }
+  state.awaiting = null;
 
   const raw = pending.raw;
   const resolved = pending.resolved;
@@ -1216,8 +1238,14 @@ function continueAfterPainkillerDice(state) {
   }
   const { roll, actorNr, offerSnake } = state.awaiting;
   const player = getPlayer(state, actorNr);
+  if (!player) {
+    state.awaiting = null;
+    logState(state, '止痛药结算异常：玩家缺失，强制推进。');
+    if (state.phase !== 'ended') moveToNextPlayer(state);
+    if (!state.awaiting) tryStartHandDiscard(state);
+    return { ok: true };
+  }
   state.awaiting = null;
-  if (!player) return { ok: false, reason: '玩家不存在' };
 
   logState(state, `止痛药掷出 ${roll}（${roll % 2 === 1 ? '奇数' : '偶数'}）。`);
   if (roll % 2 === 1) applyDamage(state, player, 1, '止痛药：');
@@ -1425,6 +1453,7 @@ function applyItemEffect(state, player, itemId, payload) {
       const idx = Math.floor(Math.random() * t.hand.length);
       const stolen = t.hand.splice(idx, 1)[0];
       player.hand.push(stolen);
+      queueHandDiscardIfNeeded(state, player);
       const stolenName = (ITEMS[stolen] && ITEMS[stolen].name) || stolen;
       logState(state, `${player.name} 从 ${t.name} 处随机抽走了【${stolenName}】。`);
       startItemFx(state, player, itemId, payload, {

@@ -4301,8 +4301,8 @@
       const isInteractive = !!interactiveTypes[a.type];
       const doneType = animDone[a.type] || (isInteractive ? 'awaiting_timeout' : null);
       if (!doneType) return;
-      // 动画：仅房主兜底；交互窗口：房主或本人均可触发超时
-      if (!isHost() && !(isInteractive && Number(a.actorNr) === Number(myActorNr))) return;
+      // 任意在线客户端均可在 expiresAt 后发送；服务端 resolveExpiredAwaiting 会校验是否真过期
+      // （避免仅房主/操作者页签冻结导致全员卡在 awaiting）
       const token = a.token;
       const ms = Math.max(300, (a.expiresAt || Date.now()) - Date.now() + 80);
       awaitingWatchdog = setTimeout(() => {
