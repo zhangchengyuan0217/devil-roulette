@@ -1655,10 +1655,12 @@
       }, 85);
     }
 
-    // 移动端/iPad：须先在用户手势里「解锁」音频，之后动画回调里才能播
+    // 移动端/iPad：须先在用户手势里「解锁」音频；开枪音用 Web Audio 缓冲，延迟揭弹也能播
     let audioUnlocked = false;
     const itemSfxPool = Object.create(null);
     const shotSfxPool = Object.create(null);
+    const shotBufferPool = Object.create(null);
+    const shotBufferLoading = Object.create(null);
     const SHOT_SFX_SRC = {
       live: 'assets/audio/shots/shoot_live.mp3',
       blank: 'assets/audio/shots/shoot_blank.mp3',
@@ -1691,33 +1693,6 @@
       return audio;
     }
 
-    function warmSfxAudio(audio) {
-      if (!audio) return;
-      try {
-        const wasMuted = audio.muted;
-        audio.muted = true;
-        const p = audio.play();
-        const restore = () => {
-          try {
-            audio.pause();
-            audio.currentTime = 0;
-          } catch (_) {}
-          audio.muted = wasMuted;
-        };
-        if (p && typeof p.then === 'function') {
-          p.then(restore).catch(() => {
-            audio.muted = wasMuted;
-          });
-        } else {
-          restore();
-        }
-      } catch (_) {
-        try {
-          audio.muted = false;
-        } catch (_) {}
-      }
-    }
-
     function getShotSfx(kind) {
       if (!SHOT_SFX_SRC[kind]) return null;
       let audio = shotSfxPool[kind];
@@ -1728,33 +1703,68 @@
       return audio;
     }
 
-    function warmShotSfx() {
-      Object.keys(SHOT_SFX_SRC).forEach((kind) => {
-        warmSfxAudio(getShotSfx(kind));
-      });
+    function ensureSharedAudioCtx() {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+        if (sharedAudioCtx.state === 'suspended') {
+          sharedAudioCtx.resume().catch(() => {});
+        }
+        return sharedAudioCtx;
+      } catch (_) {
+        return null;
+      }
     }
 
     function resumeSharedAudioCtx() {
+      ensureSharedAudioCtx();
+    }
+
+    function preloadShotBuffers() {
+      const ctx = ensureSharedAudioCtx();
+      if (!ctx) return;
+      Object.keys(SHOT_SFX_SRC).forEach((kind) => {
+        if (shotBufferPool[kind] || shotBufferLoading[kind]) return;
+        shotBufferLoading[kind] = true;
+        fetch(SHOT_SFX_SRC[kind])
+          .then((res) => {
+            if (!res.ok) throw new Error('shot sfx fetch failed');
+            return res.arrayBuffer();
+          })
+          .then((buf) => ctx.decodeAudioData(buf.slice(0)))
+          .then((decoded) => {
+            shotBufferPool[kind] = decoded;
+          })
+          .catch(() => {})
+          .then(() => {
+            delete shotBufferLoading[kind];
+          });
+      });
+    }
+
+    function playShotBuffer(kind) {
+      const ctx = ensureSharedAudioCtx();
+      const buffer = shotBufferPool[kind];
+      if (!ctx || !buffer) return false;
       try {
-        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
-          sharedAudioCtx.resume().catch(() => {});
-        }
-      } catch (_) {}
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        src.start(0);
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
 
     function unlockAudio() {
-      try {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (Ctx) {
-          if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
-          if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume().catch(() => {});
-        }
-      } catch (_) {}
+      ensureSharedAudioCtx();
+      preloadShotBuffers();
       if (audioUnlocked) return;
-      // 仅在首次解锁手势里预热（iOS 对「动画里再 new Audio」很挑）
-      warmShotSfx();
       try {
-        // 静音短音解锁 HTMLAudio（iOS Safari）
+        // 静音短音解锁 HTMLAudio（道具 / 回合提示仍走 HTMLAudio）
         const warm = new Audio(
           'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
         );
@@ -1764,18 +1774,25 @@
           p.then(() => {
             audioUnlocked = true;
             removeAudioUnlockListeners();
-            warmShotSfx();
+            preloadShotBuffers();
             try {
               warm.pause();
               warm.currentTime = 0;
             } catch (_) {}
-          }).catch(() => {});
+          }).catch(() => {
+            // AudioContext 已在手势里 resume 时，仍可播缓冲音效
+            audioUnlocked = true;
+            removeAudioUnlockListeners();
+          });
         } else {
           audioUnlocked = true;
           removeAudioUnlockListeners();
-          warmShotSfx();
+          preloadShotBuffers();
         }
-      } catch (_) {}
+      } catch (_) {
+        audioUnlocked = true;
+        removeAudioUnlockListeners();
+      }
     }
 
     audioUnlockEvents.forEach((ev) => {
@@ -1800,6 +1817,7 @@
         audio.currentTime = 0;
       } catch (_) {}
       try {
+        audio.muted = false;
         const p = audio.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch (_) {}
@@ -1811,9 +1829,13 @@
     }
 
     function playShotSfx(kind) {
-      const audio = getShotSfx(kind);
-      if (!audio) return;
-      playHtmlAudio(audio);
+      if (!SHOT_SFX_SRC[kind]) return;
+      unlockAudio();
+      resumeSharedAudioCtx();
+      preloadShotBuffers();
+      if (playShotBuffer(kind)) return;
+      // 缓冲未就绪时回退 HTMLAudio
+      playHtmlAudio(getShotSfx(kind));
     }
 
     function playYourTurnSfx() {
@@ -4010,7 +4032,7 @@
     document.getElementById('shootConfirmCancel').onclick = () => closeShootConfirm();
     document.getElementById('shootConfirmOk').onclick = () => {
       unlockAudio();
-      warmShotSfx();
+      preloadShotBuffers();
       const cb = shootConfirmPending && shootConfirmPending.onOk;
       closeShootConfirm();
       if (cb) cb();
