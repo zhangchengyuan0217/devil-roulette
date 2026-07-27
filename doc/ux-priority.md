@@ -10,16 +10,16 @@
 
 核心循环是「开枪 → 揭弹 → 扣血/过关」。道具已有音效，开枪却静音，张力断层最明显。
 
-| #   | 类型     | 建议文件 / 规格                         | 用途                          |
-| --- | -------- | --------------------------------------- | ----------------------------- |
+| #   | 类型     | 建议文件 / 规格                        | 用途                          |
+| --- | -------- | -------------------------------------- | ----------------------------- |
 | 1   | **音效** | `assets/audio/shots/shoot_live.mp3`    | 实弹命中（砰 / 击发）         |
 | 2   | **音效** | `assets/audio/shots/shoot_blank.mp3`   | 空弹（空膛咔嗒 / 哑火）       |
 | 3   | **音效** | `assets/audio/shots/shoot_special.mp3` | 特殊弹（与实/空可区分的音色） |
-| 4   | **音效** | `assets/audio/combat/flip.mp3`          | 反转 / 快轮改写弹面时的翻牌音 |
-| 5   | **音效** | `assets/audio/ui/damage.mp3`            | 扣血（可短促、可叠放）        |
-| 6   | **音效** | `assets/audio/ui/heal.mp3`              | 回血（绷带 / 铁玫瑰等）       |
-| 7   | **音效** | `assets/audio/ui/vest_block.mp3`        | 防弹衣挡住实弹                |
-| 8   | **音效** | `assets/audio/ui/win.mp3` / `lose.mp3`  | 胜负仪式收尾                  |
+| 4   | **音效** | `assets/audio/combat/flip.mp3`         | 反转 / 快轮改写弹面时的翻牌音 |
+| 5   | **音效** | `assets/audio/ui/damage.mp3`           | 扣血（可短促、可叠放）        |
+| 6   | **音效** | `assets/audio/ui/heal.mp3`             | 回血（绷带 / 铁玫瑰等）       |
+| 7   | **音效** | `assets/audio/ui/vest_block.mp3`       | 防弹衣挡住实弹                |
+| 8   | **音效** | `assets/audio/ui/win.mp3` / `lose.mp3` | 胜负仪式收尾                  |
 
 **接入点**：`playShotReveal` / 扣血结算 / 胜负 overlay（现仅有道具 SFX + `your_turn`）。
 

@@ -299,6 +299,9 @@
   <script>
     const APP_ID = '92735fab-ee4f-41f5-8af0-303522dfc972';
     const APP_VERSION = '1.0';
+    // 中国区：必须走国内 NameServer，区域码 cn（上海）
+    const PHOTON_REGION = 'cn';
+    const PHOTON_NAME_SERVER = 'wss://ns.photonengine.cn:19093';
     const EVT_ACTION = 30;
     const EVT_STATE = 31;
     const EVT_FULL = 33;   // 完整权威状态备份（房主迁移用）
@@ -3578,6 +3581,7 @@
       preferRejoinNext = !!preferRejoin;
       window.__rejoinPending = false;
       client = new LBC(Photon.ConnectionProtocol.Wss, APP_ID, APP_VERSION);
+      client.setNameServerAddress(PHOTON_NAME_SERVER);
       client.setUserId(getStableUserId());
       setJoinControlsEnabled(false);
 
@@ -3748,9 +3752,9 @@
         }
       };
 
-      gameLog(`连接 Photon（asia），UserId=${client.getUserId()}...`);
+      gameLog(`连接 Photon（${PHOTON_REGION}），UserId=${client.getUserId()}...`);
       statusDiv.textContent = '正在连接服务器...';
-      client.connectToRegionMaster('asia');
+      client.connectToRegionMaster(PHOTON_REGION);
     }
 
     async function reconnectClient(preferRejoin) {
