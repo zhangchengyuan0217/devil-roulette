@@ -762,13 +762,13 @@
             (p) => p.alive && Number(p.actorNr) !== Number(bot.actorNr)
           );
           if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
-        } else if (id === 'steal') {
+        } else if (id === 'steal' || id === 'dismantle') {
           const foes = gameState.players.filter(
             (p) => isOpponent(gameState, bot, p) && p.hand.length
           );
           if (foes.length) payload.targetActorNr = foes[Math.floor(Math.random() * foes.length)].actorNr;
           else {
-            // 无人可偷则跳过用牌
+            // 无人可偷/弃则跳过用牌
             payload._skip = true;
           }
         } else if (id === 'inspect' || id === 'peek_top') {
@@ -783,7 +783,7 @@
           payload.targets = foes.slice(0, 1).map((p) => p.actorNr);
         }
         // 跳过需要复杂选择且可能无效的牌，直接开枪更稳
-        if (!payload._skip && ['bind', 'steal', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'sniper', 'vest', 'reverse', 'peek_top'].includes(id)) {
+        if (!payload._skip && ['bind', 'steal', 'dismantle', 'bandage', 'lucky_coin', 'painkiller', 'eject', 'shotgun', 'sniper', 'vest', 'reverse', 'peek_top'].includes(id)) {
           handleAction(gameState, curNr, { type: 'use_item', itemIndex: idx, payload });
           refreshLocalView();
           return;
@@ -2323,6 +2323,12 @@
           ? `<div class="fx-card-row">${fxMiniCardHtml(awaiting.stolenItemId)}</div>`
           : `<div class="fx-icon fx-steal">随机抽走</div>`;
         resultText = `${who} 从 ${awaiting.targetName || '对手'} 处随机抽走了【${stolenLabel}】`;
+      } else if (id === 'dismantle') {
+        const dumpedLabel = awaiting.discardedName || (awaiting.discardedItemId ? itemMeta(awaiting.discardedItemId).name : '道具');
+        stageHtml = awaiting.discardedItemId
+          ? `<div class="fx-card-row">${fxMiniCardHtml(awaiting.discardedItemId)}</div>`
+          : `<div class="fx-icon fx-dismantle">随机弃置</div>`;
+        resultText = `${who} 使 ${awaiting.targetName || '对手'} 随机弃置了【${dumpedLabel}】`;
       } else if (id === 'iron_rose') {
         const cards = (awaiting.discarded || []).map((cid) => fxMiniCardHtml(cid)).join('');
         stageHtml = `<div class="fx-card-row">${cards || '<div class="fx-icon fx-heal">+1 HP</div>'}</div>`;
@@ -3974,6 +3980,29 @@
           min: 1,
           max: 1,
           confirmLabel: '随机抽走',
+          onConfirm: (nrs) => {
+            sendAction({ type: 'use_item', itemIndex, payload: { targetActorNr: nrs[0] } });
+            selectedHand = [];
+          }
+        });
+        return;
+      }
+
+      if (itemId === 'dismantle') {
+        openPlayerPicker({
+          title: '过河拆桥',
+          sub: '选择一名有手牌的对手，随机丢弃其中 1 张',
+          players: view.players,
+          selectable: (p) => {
+            if (!p.alive || Number(p.actorNr) === Number(myActorNr)) return false;
+            if ((p.handCount || 0) < 1) return false;
+            const me = view.players.find((x) => Number(x.actorNr) === Number(myActorNr));
+            if (view.mode === 'team' && me) return Number(p.team) !== Number(me.team);
+            return true;
+          },
+          min: 1,
+          max: 1,
+          confirmLabel: '随机弃置',
           onConfirm: (nrs) => {
             sendAction({ type: 'use_item', itemIndex, payload: { targetActorNr: nrs[0] } });
             selectedHand = [];

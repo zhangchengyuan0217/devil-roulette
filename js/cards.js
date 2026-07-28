@@ -2,126 +2,212 @@
 
 const ROLES = {
   iron_rose: {
-    id: 'iron_rose', name: '铁玫瑰', glyph: '薔', hue: 340,
-    art: 'assets/roles/iron_rose.jpg',
-    tag: '支援', desc: '弃置两张道具牌，你和你的队友各回一点血量。'
+    id: "iron_rose",
+    name: "铁玫瑰",
+    glyph: "薔",
+    hue: 340,
+    art: "assets/roles/iron_rose.jpg",
+    tag: "支援",
+    desc: "弃置两张道具牌，你和你的队友各回一点血量。",
   },
   gunpowder: {
-    id: 'gunpowder', name: '火药', glyph: '火', hue: 18,
-    art: 'assets/roles/gunpowder.jpg',
-    tag: '情报', desc: '你的回合内，牌桌中央实时显示弹药牌堆最底部的两张卡牌。'
+    id: "gunpowder",
+    name: "火药",
+    glyph: "火",
+    hue: 18,
+    art: "assets/roles/gunpowder.jpg",
+    tag: "情报",
+    desc: "你的回合内，牌桌中央实时显示弹药牌堆最底部的两张卡牌。",
   },
   outlaw: {
-    id: 'outlaw', name: '亡命徒', glyph: '亡命', hue: 30,
-    art: 'assets/roles/outlaw.jpg',
-    tag: '抽牌', desc: '每次对自己打出空弹，立即抽取一张道具牌。'
+    id: "outlaw",
+    name: "亡命徒",
+    glyph: "亡命",
+    hue: 30,
+    art: "assets/roles/outlaw.jpg",
+    tag: "抽牌",
+    desc: "每次对自己打出空弹，立即抽取一张道具牌。",
   },
   quick_cyl: {
-    id: 'quick_cyl', name: '快轮', glyph: '轮', hue: 200,
-    art: 'assets/roles/quick_cyl.jpg',
-    tag: '翻转', desc: '你射出的子弹，空弹视为实弹，实弹视为空弹。'
+    id: "quick_cyl",
+    name: "快轮",
+    glyph: "轮",
+    hue: 200,
+    art: "assets/roles/quick_cyl.jpg",
+    tag: "翻转",
+    desc: "你射出的子弹，空弹视为实弹，实弹视为空弹。",
   },
   double_barrel: {
-    id: 'double_barrel', name: '双管', glyph: '双', hue: 45,
-    art: 'assets/roles/double_barrel.jpg',
-    tag: '赌博', desc: '每次装弹后，可声明本次装弹第几发子弹为实弹或空弹，若声明成功，则你和你的队友下一轮获得双倍道具。若声明失败，你的对手们下一轮获得双倍道具。'
+    id: "double_barrel",
+    name: "双管",
+    glyph: "双",
+    hue: 45,
+    art: "assets/roles/double_barrel.jpg",
+    tag: "赌博",
+    desc: "每次装弹后，可声明本次装弹第几发子弹为实弹或空弹，若声明成功，则你和你的队友下一轮获得双倍道具。若声明失败，你的对手们下一轮获得双倍道具。",
   },
   silver_spike: {
-    id: 'silver_spike', name: '银刺', glyph: '刺', hue: 210,
-    art: 'assets/roles/silver_spike.jpg',
-    tag: '特殊', desc: '场上有银刺时，每轮装弹会自动将特殊子弹随机塞入子弹堆（银刺无法选择是否塞入）。'
+    id: "silver_spike",
+    name: "银刺",
+    glyph: "刺",
+    hue: 210,
+    art: "assets/roles/silver_spike.jpg",
+    tag: "特殊",
+    desc: "场上有银刺时，每轮装弹会自动将特殊子弹随机塞入子弹堆（银刺无法选择是否塞入）。",
   },
   night_owl: {
-    id: 'night_owl', name: '夜枭', glyph: '枭', hue: 265,
-    art: 'assets/roles/night_owl.jpg',
-    tag: '反打', desc: '当你的血量少于等于4点时，你对自己开枪打出实弹选择一个对手一起扣除血量。'
+    id: "night_owl",
+    name: "夜枭",
+    glyph: "枭",
+    hue: 265,
+    art: "assets/roles/night_owl.jpg",
+    tag: "反打",
+    desc: "当你的血量少于等于4点时，你对自己开枪打出实弹选择一个对手一起扣除血量。",
   },
   rattlesnake: {
-    id: 'rattlesnake', name: '响尾蛇', glyph: '蛇', hue: 145,
-    art: 'assets/roles/rattlesnake.jpg',
-    tag: '复制', desc: '当有一位玩家使用道具时，你可以消耗一点血量将该道具卡复制到自己手中。（一轮限一次）'
+    id: "rattlesnake",
+    name: "响尾蛇",
+    glyph: "蛇",
+    hue: 145,
+    art: "assets/roles/rattlesnake.jpg",
+    tag: "复制",
+    desc: "当有一位玩家使用道具时，你可以消耗一点血量将该道具卡复制到自己手中。（一轮限一次）",
   },
   zhui_xiang: {
-    id: 'zhui_xiang', name: '追香', glyph: '香', hue: 310,
-    art: 'assets/roles/zhui_xiang.jpg',
-    tag: '讨债', desc: '此轮内对手开枪打伤你时记为债务人（一轮限一次）。同轮内你对其打出的实弹伤害 +1 后清除；过轮作废。不可与霰弹枪追加。'
-  }
+    id: "zhui_xiang",
+    name: "追香",
+    glyph: "香",
+    hue: 310,
+    art: "assets/roles/zhui_xiang.jpg",
+    tag: "讨债",
+    desc: "此轮内对手开枪打伤你时记为债务人（一轮限一次）。同轮内你对其打出的实弹伤害 +1 后清除；过轮作废。不可与霰弹枪追加。",
+  },
 };
 
 const ITEMS = {
   steal: {
-    id: 'steal', name: '顺手牵羊', glyph: '羊', hue: 95,
-    art: 'assets/tools/steal_pick.jpg',
-    desc: '选中一名有手牌的对手后，随机抽走一张手牌。'
+    id: "steal",
+    name: "顺手牵羊",
+    glyph: "羊",
+    hue: 95,
+    art: "assets/tools/steal_pick.jpg",
+    desc: "选中一名有手牌的对手后，随机抽走一张手牌。",
+  },
+  dismantle: {
+    id: "dismantle",
+    name: "过河拆桥",
+    glyph: "拆",
+    hue: 12,
+    art: "assets/tools/dismantle.jpg",
+    desc: "选中一名有手牌的对手后，随机丢弃对手的一张手牌。",
   },
   lucky_coin: {
-    id: 'lucky_coin', name: '幸运硬币', glyph: '币', hue: 42,
-    art: 'assets/tools/lucky_coin.jpg',
-    desc: '抽两张道具卡。'
+    id: "lucky_coin",
+    name: "幸运硬币",
+    glyph: "币",
+    hue: 42,
+    art: "assets/tools/lucky_coin.jpg",
+    desc: "抽两张道具卡。",
   },
   painkiller: {
-    id: 'painkiller', name: '止痛药', glyph: '药', hue: 280,
-    art: 'assets/tools/painkiller.jpg',
-    desc: '投掷一次六面骰子，奇数失去1点血量，偶数回复2点血量。'
+    id: "painkiller",
+    name: "止痛药",
+    glyph: "药",
+    hue: 280,
+    art: "assets/tools/painkiller.jpg",
+    desc: "投掷一次六面骰子，奇数失去1点血量，偶数回复2点血量。",
   },
   bandage: {
-    id: 'bandage', name: '绷带', glyph: '绷', hue: 8,
-    art: 'assets/tools/bandage.jpg',
-    desc: '回复一点血量。'
+    id: "bandage",
+    name: "绷带",
+    glyph: "绷",
+    hue: 8,
+    art: "assets/tools/bandage.jpg",
+    desc: "回复一点血量。",
   },
   eject: {
-    id: 'eject', name: '退弹', glyph: '退', hue: 25,
-    art: 'assets/tools/eject.jpg',
-    desc: '弃置子弹牌堆顶上一张子弹牌。'
+    id: "eject",
+    name: "退弹",
+    glyph: "退",
+    hue: 25,
+    art: "assets/tools/eject.jpg",
+    desc: "弃置子弹牌堆顶上一张子弹牌。",
   },
   inspect: {
-    id: 'inspect', name: '检视弹巢', glyph: '视', hue: 190,
-    art: 'assets/tools/inspect.jpg',
-    desc: '查看子弹牌堆中任意位置的子弹牌。'
+    id: "inspect",
+    name: "检视弹巢",
+    glyph: "视",
+    hue: 190,
+    art: "assets/tools/inspect.jpg",
+    desc: "查看子弹牌堆中任意位置的子弹牌。",
   },
   shotgun: {
-    id: 'shotgun', name: '霰弹枪', glyph: '霰', hue: 0,
-    art: 'assets/tools/shotgun.jpg',
-    desc: '若下一发为实弹，则开枪时造成的伤害改为造成2点伤害。不可与狙击枪叠加。'
+    id: "shotgun",
+    name: "霰弹枪",
+    glyph: "霰",
+    hue: 0,
+    art: "assets/tools/shotgun.jpg",
+    desc: "若下一发为实弹，则开枪时造成的伤害改为造成2点伤害。不可与狙击枪叠加。",
   },
   vest: {
-    id: 'vest', name: '防弹衣', glyph: '甲', hue: 205,
-    art: 'assets/tools/vest.jpg',
-    desc: '抵御你受到的下一次实弹伤害（含霰弹/追香加伤）。特殊弹、止痛药等非实弹伤害无法抵消。'
+    id: "vest",
+    name: "防弹衣",
+    glyph: "甲",
+    hue: 205,
+    art: "assets/tools/vest.jpg",
+    desc: "抵御你受到的下一次实弹伤害（含霰弹/追香加伤）。特殊弹、止痛药等非实弹伤害无法抵消。",
   },
   sniper: {
-    id: 'sniper', name: '狙击枪', glyph: '狙', hue: 15,
-    art: 'assets/tools/sniper.jpg',
-    desc: '若下一发为实弹，无视防弹衣造成一点伤害，并移除被击中者的防弹衣效果。不可与霰弹枪叠加。'
+    id: "sniper",
+    name: "狙击枪",
+    glyph: "狙",
+    hue: 15,
+    art: "assets/tools/sniper.jpg",
+    desc: "若下一发为实弹，无视防弹衣造成一点伤害，并移除被击中者的防弹衣效果。不可与霰弹枪叠加。",
   },
   swap: {
-    id: 'swap', name: '换弹', glyph: '换', hue: 160,
-    art: 'assets/tools/swap.jpg',
-    desc: '交换子弹牌堆中任意两张子弹牌的位置。'
+    id: "swap",
+    name: "换弹",
+    glyph: "换",
+    hue: 160,
+    art: "assets/tools/swap.jpg",
+    desc: "交换子弹牌堆中任意两张子弹牌的位置。",
   },
   peek_top: {
-    id: 'peek_top', name: '检视弹簧', glyph: '簧', hue: 175,
-    art: 'assets/tools/peek_top.jpg',
-    desc: '查看子弹牌堆顶上的子弹牌。'
+    id: "peek_top",
+    name: "检视弹簧",
+    glyph: "簧",
+    hue: 175,
+    art: "assets/tools/peek_top.jpg",
+    desc: "查看子弹牌堆顶上的子弹牌。",
   },
   reverse: {
-    id: 'reverse', name: '反转', glyph: '反', hue: 220,
-    art: 'assets/tools/reverse.jpg',
-    desc: '将下一发子弹反转：实弹变为空弹，空弹变为实弹；特殊弹类型不变，但仍消耗本效果。'
+    id: "reverse",
+    name: "反转",
+    glyph: "反",
+    hue: 220,
+    art: "assets/tools/reverse.jpg",
+    desc: "将下一发子弹反转：实弹变为空弹，空弹变为实弹；特殊弹类型不变，但仍消耗本效果。",
   },
   bind: {
-    id: 'bind', name: '捆绑', glyph: '捆', hue: 55,
-    art: 'assets/tools/bind.jpg',
-    desc: '选择一个玩家，他的下一回合无法行动。'
+    id: "bind",
+    name: "捆绑",
+    glyph: "捆",
+    hue: 55,
+    art: "assets/tools/bind.jpg",
+    desc: "选择一个玩家，他的下一回合无法行动。",
   },
   double_arrow: {
-    id: 'double_arrow', name: '一箭双雕', glyph: '雕', hue: 320,
-    art: 'assets/tools/double_arrow.jpg',
-    desc: '连锁或解锁一到两名玩家；每人同时仅可与一人连锁，冲突时旧连锁自动解除。被连锁的玩家同时受到下一次伤害；无论伤害如何触发，只要再受到一次伤害，该连锁即解除。'
-  }
+    id: "double_arrow",
+    name: "一箭双雕",
+    glyph: "雕",
+    hue: 320,
+    art: "assets/tools/double_arrow.jpg",
+    desc: "连锁或解锁一到两名玩家；每人同时仅可与一人连锁，冲突时旧连锁自动解除。被连锁的玩家同时受到下一次伤害；无论伤害如何触发，只要再受到一次伤害，该连锁即解除。",
+  },
 };
 
-const BULLET = { LIVE: 'live', BLANK: 'blank', SPECIAL: 'special' };
+const BULLET = { LIVE: "live", BLANK: "blank", SPECIAL: "special" };
 
 function shuffle(arr) {
   const a = arr.slice();
@@ -149,25 +235,26 @@ function buildAmmoCountDeck() {
 }
 
 function bulletLabel(b) {
-  if (b === BULLET.LIVE) return '实弹';
-  if (b === BULLET.BLANK) return '空弹';
-  if (b === BULLET.SPECIAL) return '特殊弹';
+  if (b === BULLET.LIVE) return "实弹";
+  if (b === BULLET.BLANK) return "空弹";
+  if (b === BULLET.SPECIAL) return "特殊弹";
   return b;
 }
 
 function roleMeta(roleId) {
-  return ROLES[roleId] || { name: '?', glyph: '?', hue: 0, tag: '', desc: '' };
+  return ROLES[roleId] || { name: "?", glyph: "?", hue: 0, tag: "", desc: "" };
 }
 
 function itemMeta(itemId) {
-  return ITEMS[itemId] || { name: '?', glyph: '?', hue: 0, desc: '' };
+  return ITEMS[itemId] || { name: "?", glyph: "?", hue: 0, desc: "" };
 }
 
 /** 手牌/预览用缩略图（assets/tools/sm），减轻手机解码压力 */
 function itemArtSm(art) {
-  if (!art || typeof art !== 'string') return art;
-  if (art.indexOf('/tools/') === -1 || art.indexOf('/tools/sm/') !== -1) return art;
-  return art.replace('/tools/', '/tools/sm/');
+  if (!art || typeof art !== "string") return art;
+  if (art.indexOf("/tools/") === -1 || art.indexOf("/tools/sm/") !== -1)
+    return art;
+  return art.replace("/tools/", "/tools/sm/");
 }
 
 function preloadItemArts() {
@@ -178,7 +265,7 @@ function preloadItemArts() {
     [thumb, art].forEach((src) => {
       if (!src) return;
       const img = new Image();
-      img.decoding = 'async';
+      img.decoding = "async";
       img.src = src;
     });
   });
