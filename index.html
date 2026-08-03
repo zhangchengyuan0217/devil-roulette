@@ -944,8 +944,10 @@
       if (!full || !full.phase) return false;
       if (full.phase !== 'playing' && full.phase !== 'ended') return false;
       const seq = Number(full.seq) || 0;
+      // 结算后房主重开：必须接受新对局，即使 seq 从更小值重新计数
+      const isRematch = !!(view && view.phase === 'ended' && full.phase === 'playing');
       // 已有同 seq 或更新视图时跳过（避免 EVT_FULL + EVT_STATE 双绘；丢包时 last 仍旧可再应用）
-      if (seq > 0 && seq <= lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
+      if (!isRematch && seq > 0 && seq <= lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
         return false;
       }
       try {
@@ -1167,12 +1169,31 @@
       }
       lastAppliedViewKey = renderKey;
       const wasLobby = !view || view.phase === 'lobby';
+      const wasEnded = !!(view && view.phase === 'ended');
+      // 结算页收到新开局：清掉胜负遮罩与上局动画标记，避免一直停在结算页
+      if (wasEnded && v && v.phase === 'playing') {
+        clearGameOverlays();
+        revealedOnce = false;
+        lastRevealKey = '';
+        lastSpinToken = '';
+        lastAmmoToken = '';
+        lastDiceToken = '';
+        lastEjectToken = '';
+        lastShotRevealToken = '';
+        lastItemFxToken = '';
+        lastSeatLayoutKey = '';
+        lastRenderedHandSig = '';
+        lastCenterboardSig = '';
+        lastLogSig = '';
+        lastGunpowderSig = '';
+        lastPrivateInfoSig = '';
+      }
       view = v;
       if (v && (v.seq || v.seq === 0)) {
         lastAppliedStateSeq = Math.max(lastAppliedStateSeq, Number(v.seq) || 0);
       }
       if (v && (v.phase === 'playing' || v.phase === 'ended')) {
-        maybeShowReveal(wasLobby);
+        maybeShowReveal(wasLobby || wasEnded);
         clearLobbySyncTimer();
       }
       render();
@@ -3560,7 +3581,14 @@
         alert('组队模式需要正好 4 人，已改为混战');
         mode = 'ffa';
       }
+      // 续写 seq，避免其他玩家仍拿着上一局高 seq 把新开局当过期包丢掉
+      const prevSeq = Math.max(
+        Number(gameState && gameState.seq) || 0,
+        Number(fullStateBackup && fullStateBackup.seq) || 0,
+        lastAppliedStateSeq > 0 ? lastAppliedStateSeq : 0
+      );
       gameState = createEmptyState();
+      gameState.seq = prevSeq;
       actors.sort((a, b) => a.actorNr - b.actorNr);
       revealedOnce = false;
       lastRevealKey = '';
@@ -3739,8 +3767,9 @@
           hostProcessAction(actorNr, content);
         } else if (code === EVT_STATE) {
           const seq = Number(content && content.seq) || 0;
-          // 丢弃过期包，避免旧状态覆盖新画面、重复重绘
-          if (seq > 0 && seq < lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
+          // 结算后重开必须放行；其余仍丢弃过期包，避免旧状态覆盖新画面
+          const isRematch = !!(view && view.phase === 'ended' && content && content.phase === 'playing');
+          if (!isRematch && seq > 0 && seq < lastAppliedStateSeq && view && (view.phase === 'playing' || view.phase === 'ended')) {
             return;
           }
           applyView(content);
